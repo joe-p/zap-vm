@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
 
@@ -10,7 +10,7 @@ pub const ZAP_STACK_CAPACITY: usize = 1000;
 /// Represents a value that can be stored on the stack in the ZAP.
 /// Each value is 8 bytes in size, thus the total size of this enum is ~9 bytes,
 /// but will be 16 bytes due to alignment.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub enum StackValue<'a> {
     /// Unsigned 64-bit integer value.
     U64(u64),
@@ -117,17 +117,25 @@ impl<'a> ZapEval<'a> {
         self.push(StackValue::Vec(idx));
     }
 
+    /// Push a value onto the Vec at the top of the stack.
+    /// /// [vec, value] -> []
     pub fn op_push_vec(&mut self) {
         let value = self.pop().expect("Expected a value to push onto the Vec");
-        match self.pop() {
+        let vec = self.pop();
+        match vec {
             Some(StackValue::Vec(v)) => {
                 self.vecs[v as usize].push(value);
                 self.push(StackValue::Vec(v));
             }
-            _ => panic!("Expected a Vec on the stack to push onto"),
+            _ => panic!(
+                "Expected a Vec on the stack to push onto. Got {:?} with value {:?} from stack {:#?}",
+                vec, value, self.stack
+            ),
         };
     }
 
+    /// Store the value on the top of the stack
+    /// [value, reg_idx] -> []
     pub fn op_reg_store(&mut self) {
         match self.pop() {
             Some(StackValue::U64(reg_idx)) if reg_idx < 256 => {
