@@ -36,23 +36,24 @@ impl<'a> ZapEval<'a> {
         }
 
         if stack.capacity() < ZAP_STACK_CAPACITY {
-            panic!("Stack capacity must be at least ZAP_STACK_CAPACITY. Current capacity: {}. ZAP_STACK_CAPACITY: {}", stack.capacity(), ZAP_STACK_CAPACITY);
+            panic!(
+                "Stack capacity must be at least ZAP_STACK_CAPACITY. Current capacity: {}. ZAP_STACK_CAPACITY: {}",
+                stack.capacity(),
+                ZAP_STACK_CAPACITY
+            );
         }
 
         if bump.allocated_bytes() != 0 {
             panic!("Bump allocator must be empty before creating ZapEval");
         }
 
-        ZapEval {
-            stack,
-            bump,
-        }
+        ZapEval { stack, bump }
     }
 
     pub fn push(&mut self, value: StackValue<'a>) {
         if self.stack.len() == self.stack.capacity() {
             panic!("Stack overflow: too many items on the stack");
-        } 
+        }
         self.stack.push(value);
     }
 
@@ -77,7 +78,9 @@ impl<'a> ZapEval<'a> {
     }
 
     pub fn op_add(&mut self) {
-        if let (Some(StackValue::U64(left)), Some(StackValue::U64(right))) = (self.pop(), self.pop()) {
+        if let (Some(StackValue::U64(left)), Some(StackValue::U64(right))) =
+            (self.pop(), self.pop())
+        {
             self.push(StackValue::U64(left.checked_add(right).unwrap()));
         } else {
             panic!("Invalid stack state for addition");
@@ -91,7 +94,9 @@ impl<'a> ZapEval<'a> {
             panic!("Expected a U64 value for Vec capacity");
         };
 
-        let vec = self.bump.alloc(BumpVec::with_capacity_in(capacity, self.bump));
+        let vec = self
+            .bump
+            .alloc(BumpVec::with_capacity_in(capacity, self.bump));
         self.push(StackValue::Vec(vec));
     }
 
@@ -101,13 +106,11 @@ impl<'a> ZapEval<'a> {
             Some(StackValue::Vec(v)) => {
                 v.push(value);
                 self.push(StackValue::Vec(v));
-            },
+            }
             _ => panic!("Expected a Vec on the stack to push onto"),
         };
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -147,7 +150,7 @@ mod tests {
         eval.op_push_int(42);
         eval.op_push_vec();
 
-        if let Some(StackValue::Vec(vec)) = eval.pop(){
+        if let Some(StackValue::Vec(vec)) = eval.pop() {
             assert_eq!(vec.len(), 1);
             if let StackValue::U64(value) = vec[0] {
                 assert_eq!(value, 42);
@@ -162,7 +165,7 @@ mod tests {
     #[test]
     fn add() {
         let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY); 
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let mut eval = ZapEval::new(&mut stack, &bump);
 
         eval.op_push_int(5);
