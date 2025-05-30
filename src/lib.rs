@@ -10,7 +10,7 @@ pub const ZAP_STACK_CAPACITY: usize = 1000;
 /// Represents a value that can be stored on the stack in the ZAP.
 /// Each value is 8 bytes in size, thus the total size of this enum is ~9 bytes,
 /// but will be 16 bytes due to alignment.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum StackValue<'a> {
     /// Unsigned 64-bit integer value.
     U64(u64),
@@ -18,6 +18,8 @@ pub enum StackValue<'a> {
     Bytes(&'a BumpVec<'a, u8>),
     /// Vector of StackValues, allocated in the bump allocator.
     Vec(u64),
+    #[default]
+    Void,
 }
 
 pub struct ZapEval<'a> {
@@ -27,6 +29,7 @@ pub struct ZapEval<'a> {
     pub stack: &'a mut Vec<StackValue<'a>>,
     bump: &'a bumpalo::Bump,
     pub vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
+    pub registers: [StackValue<'a>; 256],
 }
 
 impl<'a> ZapEval<'a> {
@@ -54,7 +57,14 @@ impl<'a> ZapEval<'a> {
             panic!("Bump allocator must be empty before creating ZapEval");
         }
 
-        ZapEval { stack, bump, vecs }
+        let registers = [const { StackValue::Void }; 256];
+
+        ZapEval {
+            stack,
+            bump,
+            vecs,
+            registers,
+        }
     }
 
     pub fn push(&mut self, value: StackValue<'a>) {
@@ -116,6 +126,28 @@ impl<'a> ZapEval<'a> {
             }
             _ => panic!("Expected a Vec on the stack to push onto"),
         };
+    }
+
+    pub fn op_reg_store(&mut self) {
+        match self.pop() {
+            Some(StackValue::U64(reg_idx)) if reg_idx < 256 => {
+                let value = self
+                    .pop()
+                    .expect("Expected a value to store in the register");
+                self.registers[reg_idx as usize] = value;
+            }
+            _ => panic!("Expected a U64 register index on the stack"),
+        }
+    }
+
+    pub fn op_reg_load(&mut self) {
+        match self.pop() {
+            Some(StackValue::U64(reg_idx)) if reg_idx < 256 => {
+                let value = self.registers[reg_idx as usize].clone();
+                self.push(value);
+            }
+            _ => panic!("Expected a U64 register index on the stack"),
+        }
     }
 }
 
@@ -189,6 +221,26 @@ mod tests {
         eval.op_add();
         if let Some(StackValue::U64(result)) = eval.pop() {
             assert_eq!(result, 8);
+        } else {
+            panic!("Expected a Uint result on the stack");
+        }
+    }
+
+    #[test]
+    fn reg_store_load() {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+
+        eval.op_push_int(42);
+        eval.op_push_int(0);
+        eval.op_reg_store(); // Store 42 in register 0
+        eval.op_push_int(0); // Push register index 0
+        eval.op_reg_load(); // Load value from register 0
+
+        if let Some(StackValue::U64(result)) = eval.pop() {
+            assert_eq!(result, 42);
         } else {
             panic!("Expected a Uint result on the stack");
         }
