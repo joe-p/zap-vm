@@ -10,6 +10,7 @@ pub const ZAP_STACK_CAPACITY: usize = 1000;
 /// Represents a value that can be stored on the stack in the ZAP.
 /// Each value is 8 bytes in size, thus the total size of this enum is ~9 bytes,
 /// but will be 16 bytes due to alignment.
+#[derive(Clone)]
 pub enum StackValue<'a> {
     /// Unsigned 64-bit integer value.
     U64(u64),
@@ -25,7 +26,7 @@ pub struct ZapEval<'a> {
     /// that will never be exceeded.
     pub stack: &'a mut Vec<StackValue<'a>>,
     bump: &'a bumpalo::Bump,
-    pub vecs: Vec<BumpVec<'a, StackValue<'a>>>,
+    pub vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
 }
 
 impl<'a> ZapEval<'a> {
@@ -34,7 +35,7 @@ impl<'a> ZapEval<'a> {
     pub fn new(
         stack: &'a mut Vec<StackValue<'a>>,
         bump: &'a bumpalo::Bump,
-        vecs: Vec<BumpVec<'a, StackValue<'a>>>,
+        vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
     ) -> Self {
         if !stack.is_empty() {
             panic!("Stack must be empty before creating ZapEval");
@@ -120,6 +121,8 @@ impl<'a> ZapEval<'a> {
 
 #[cfg(test)]
 mod tests {
+    use core::mem::ManuallyDrop;
+
     use super::*;
     use bumpalo::Bump;
 
@@ -132,11 +135,11 @@ mod tests {
     #[test]
     fn bytes_len() {
         let bump = Bump::new();
-        let vecs = Vec::with_capacity(100);
 
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
         let mut bytes = BumpVec::with_capacity_in(4, &bump);
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
 
         bytes.extend_from_slice(&[1, 2, 3, 4]);
         eval.op_push_bytes(&bytes);
@@ -152,11 +155,10 @@ mod tests {
     #[test]
     fn vec_push() {
         let bump = Bump::new();
-
-        let vecs = Vec::with_capacity(100);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
 
-        let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
         eval.op_push_int(2);
         eval.op_init_vec_with_initial_capacity();
         eval.op_push_int(42);
@@ -179,8 +181,8 @@ mod tests {
     fn add() {
         let bump = Bump::new();
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let vecs = Vec::with_capacity(100);
-        let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
 
         eval.op_push_int(5);
         eval.op_push_int(3);

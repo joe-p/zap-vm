@@ -1,18 +1,19 @@
+use std::mem::ManuallyDrop;
+
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 extern crate alloc;
 
 use alloc::vec::Vec;
 use bumpalo::Bump;
-use bumpalo::collections::Vec as BumpVec;
 use zap_vm::{ZAP_STACK_CAPACITY, ZapEval};
 
 fn benchmark_op_init_vec(c: &mut Criterion) {
     c.bench_function("op_init_vec_capacity_10", |b| {
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
         let bump = Bump::new();
-        let vecs = Vec::with_capacity(100);
 
-        let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
 
         b.iter(|| {
             // Initialize a vector with capacity 10
@@ -26,9 +27,8 @@ fn benchmark_op_init_vec(c: &mut Criterion) {
 fn benchmark_op_push_vec(c: &mut Criterion) {
     let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let vecs = Vec::with_capacity(100);
-
-    let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
 
     c.bench_function("op_push_vec_single_item", |b| {
         b.iter(|| {
@@ -48,9 +48,9 @@ fn benchmark_op_push_vec(c: &mut Criterion) {
 fn benchmark_multiple_push_ops(c: &mut Criterion) {
     let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let vecs = Vec::with_capacity(100);
+    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
 
-    let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
 
     c.bench_function("push_10_items_to_vec", |b| {
         b.iter(|| {
@@ -72,9 +72,9 @@ fn benchmark_multiple_push_ops(c: &mut Criterion) {
 fn benchmark_multiple_push_over_capacity(c: &mut Criterion) {
     let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let vecs = Vec::with_capacity(100);
+    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
 
-    let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
 
     c.bench_function("push_10_items_over_capacity", |b| {
         b.iter(|| {
