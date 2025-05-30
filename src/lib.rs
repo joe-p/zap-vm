@@ -84,7 +84,13 @@ impl<'a> ZapEval<'a> {
         }
     }
 
-    pub fn op_init_vec_with_initial_capacity(&mut self, capacity: usize) {
+    pub fn op_init_vec_with_initial_capacity(&mut self) {
+        let capacity = if let Some(StackValue::U64(capacity)) = self.pop() {
+            capacity as usize
+        } else {
+            panic!("Expected a U64 value for Vec capacity");
+        };
+
         let vec = self.bump.alloc(BumpVec::with_capacity_in(capacity, self.bump));
         self.push(StackValue::Vec(vec));
     }
@@ -136,7 +142,8 @@ mod tests {
         let bump = Bump::new();
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let mut eval = ZapEval::new(&mut stack, &bump);
-        eval.op_init_vec_with_initial_capacity(2);
+        eval.op_push_int(2);
+        eval.op_init_vec_with_initial_capacity();
         eval.op_push_int(42);
         eval.op_push_vec();
 
