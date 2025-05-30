@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use bumpalo::collections::Vec as BumpVec;
 
-const ZAP_STACK_CAPACITY: usize = 1000;
+pub const ZAP_STACK_CAPACITY: usize = 1000;
 
 /// Represents a value that can be stored on the stack in the ZAP.
 /// Each value is 8 bytes in size, thus the total size of this enum is ~9 bytes,
