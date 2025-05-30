@@ -25,7 +25,7 @@ pub struct ZapEval<'a> {
     /// that will never be exceeded.
     pub stack: &'a mut Vec<StackValue<'a>>,
     bump: &'a bumpalo::Bump,
-    pub vecs: BumpVec<'a, BumpVec<'a, StackValue<'a>>>,
+    pub vecs: Vec<BumpVec<'a, StackValue<'a>>>,
 }
 
 impl<'a> ZapEval<'a> {
@@ -34,7 +34,7 @@ impl<'a> ZapEval<'a> {
     pub fn new(
         stack: &'a mut Vec<StackValue<'a>>,
         bump: &'a bumpalo::Bump,
-        vecs: BumpVec<'a, BumpVec<'a, StackValue<'a>>>,
+        vecs: Vec<BumpVec<'a, StackValue<'a>>>,
     ) -> Self {
         if !stack.is_empty() {
             panic!("Stack must be empty before creating ZapEval");
@@ -132,8 +132,7 @@ mod tests {
     #[test]
     fn bytes_len() {
         let bump = Bump::new();
-        let vecs_bump = Bump::new();
-        let vecs = BumpVec::new_in(&vecs_bump);
+        let vecs = Vec::with_capacity(100);
 
         let mut bytes = BumpVec::with_capacity_in(4, &bump);
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
@@ -153,9 +152,8 @@ mod tests {
     #[test]
     fn vec_push() {
         let bump = Bump::new();
-        let vecs_bump = Bump::new();
-        let vecs = BumpVec::new_in(&vecs_bump);
 
+        let vecs = Vec::with_capacity(100);
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
 
         let mut eval = ZapEval::new(&mut stack, &bump, vecs);
@@ -180,9 +178,8 @@ mod tests {
     #[test]
     fn add() {
         let bump = Bump::new();
-        let vecs_bump = Bump::new();
-        let vecs = BumpVec::new_in(&vecs_bump);
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let vecs = Vec::with_capacity(100);
         let mut eval = ZapEval::new(&mut stack, &bump, vecs);
 
         eval.op_push_int(5);

@@ -10,8 +10,7 @@ fn benchmark_op_init_vec(c: &mut Criterion) {
     c.bench_function("op_init_vec_capacity_10", |b| {
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let bump = Bump::new();
-        let vecs_bump = Bump::new();
-        let vecs = BumpVec::new_in(&vecs_bump);
+        let vecs = Vec::with_capacity(100);
 
         let mut eval = ZapEval::new(&mut stack, &bump, vecs);
 
@@ -27,8 +26,7 @@ fn benchmark_op_init_vec(c: &mut Criterion) {
 fn benchmark_op_push_vec(c: &mut Criterion) {
     let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let vecs_bump = Bump::new();
-    let vecs = BumpVec::new_in(&vecs_bump);
+    let vecs = Vec::with_capacity(100);
 
     let mut eval = ZapEval::new(&mut stack, &bump, vecs);
 
@@ -50,8 +48,7 @@ fn benchmark_op_push_vec(c: &mut Criterion) {
 fn benchmark_multiple_push_ops(c: &mut Criterion) {
     let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let vecs_bump = Bump::new();
-    let vecs = BumpVec::new_in(&vecs_bump);
+    let vecs = Vec::with_capacity(100);
 
     let mut eval = ZapEval::new(&mut stack, &bump, vecs);
 
@@ -75,8 +72,7 @@ fn benchmark_multiple_push_ops(c: &mut Criterion) {
 fn benchmark_multiple_push_over_capacity(c: &mut Criterion) {
     let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let vecs_bump = Bump::new();
-    let vecs = BumpVec::new_in(&vecs_bump);
+    let vecs = Vec::with_capacity(100);
 
     let mut eval = ZapEval::new(&mut stack, &bump, vecs);
 
