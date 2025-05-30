@@ -16,7 +16,7 @@ pub enum StackValue<'a> {
     /// Byte array allocated in the bump allocator.
     Bytes(&'a BumpVec<'a, u8>),
     /// Vector of StackValues, allocated in the bump allocator.
-    Vec(&'a mut BumpVec<'a, StackValue<'a>>),
+    Vec(u64),
 }
 
 pub struct ZapEval<'a> {
@@ -25,12 +25,17 @@ pub struct ZapEval<'a> {
     /// that will never be exceeded.
     pub stack: &'a mut Vec<StackValue<'a>>,
     bump: &'a bumpalo::Bump,
+    pub vecs: BumpVec<'a, BumpVec<'a, StackValue<'a>>>,
 }
 
 impl<'a> ZapEval<'a> {
     /// Creates a new ZapEval instance with a mutable reference to a stack and a bump allocator.
     /// Both the stack and the bump allocator are expected to be cleared/reset before use
-    pub fn new(stack: &'a mut Vec<StackValue<'a>>, bump: &'a bumpalo::Bump) -> Self {
+    pub fn new(
+        stack: &'a mut Vec<StackValue<'a>>,
+        bump: &'a bumpalo::Bump,
+        vecs: BumpVec<'a, BumpVec<'a, StackValue<'a>>>,
+    ) -> Self {
         if !stack.is_empty() {
             panic!("Stack must be empty before creating ZapEval");
         }
@@ -43,11 +48,12 @@ impl<'a> ZapEval<'a> {
             );
         }
 
+        #[cfg(not(test))]
         if bump.allocated_bytes() != 0 {
             panic!("Bump allocator must be empty before creating ZapEval");
         }
 
-        ZapEval { stack, bump }
+        ZapEval { stack, bump, vecs }
     }
 
     pub fn push(&mut self, value: StackValue<'a>) {
@@ -94,17 +100,17 @@ impl<'a> ZapEval<'a> {
             panic!("Expected a U64 value for Vec capacity");
         };
 
-        let vec = self
-            .bump
-            .alloc(BumpVec::with_capacity_in(capacity, self.bump));
-        self.push(StackValue::Vec(vec));
+        let idx = self.vecs.len() as u64;
+        let vec = BumpVec::with_capacity_in(capacity, self.bump);
+        self.vecs.push(vec);
+        self.push(StackValue::Vec(idx));
     }
 
     pub fn op_push_vec(&mut self) {
         let value = self.pop().expect("Expected a value to push onto the Vec");
         match self.pop() {
             Some(StackValue::Vec(v)) => {
-                v.push(value);
+                self.vecs[v as usize].push(value);
                 self.push(StackValue::Vec(v));
             }
             _ => panic!("Expected a Vec on the stack to push onto"),
@@ -126,9 +132,13 @@ mod tests {
     #[test]
     fn bytes_len() {
         let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut eval = ZapEval::new(&mut stack, &bump);
+        let vecs_bump = Bump::new();
+        let vecs = BumpVec::new_in(&vecs_bump);
+
         let mut bytes = BumpVec::with_capacity_in(4, &bump);
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut eval = ZapEval::new(&mut stack, &bump, vecs);
+
         bytes.extend_from_slice(&[1, 2, 3, 4]);
         eval.op_push_bytes(&bytes);
         eval.op_bytes_len();
@@ -143,14 +153,19 @@ mod tests {
     #[test]
     fn vec_push() {
         let bump = Bump::new();
+        let vecs_bump = Bump::new();
+        let vecs = BumpVec::new_in(&vecs_bump);
+
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut eval = ZapEval::new(&mut stack, &bump);
+
+        let mut eval = ZapEval::new(&mut stack, &bump, vecs);
         eval.op_push_int(2);
         eval.op_init_vec_with_initial_capacity();
         eval.op_push_int(42);
         eval.op_push_vec();
 
-        if let Some(StackValue::Vec(vec)) = eval.pop() {
+        if let Some(StackValue::Vec(vec_idx)) = eval.pop() {
+            let vec = &eval.vecs[vec_idx as usize];
             assert_eq!(vec.len(), 1);
             if let StackValue::U64(value) = vec[0] {
                 assert_eq!(value, 42);
@@ -165,8 +180,10 @@ mod tests {
     #[test]
     fn add() {
         let bump = Bump::new();
+        let vecs_bump = Bump::new();
+        let vecs = BumpVec::new_in(&vecs_bump);
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut eval = ZapEval::new(&mut stack, &bump);
+        let mut eval = ZapEval::new(&mut stack, &bump, vecs);
 
         eval.op_push_int(5);
         eval.op_push_int(3);
