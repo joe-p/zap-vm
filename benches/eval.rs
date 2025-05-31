@@ -21,7 +21,7 @@ fn benchmark_op_add(c: &mut Criterion) {
                 eval.op_push_int(black_box(5));
                 eval.op_push_int(black_box(3));
                 // Perform the addition operation
-                //           eval.op_add();
+                eval.op_add();
                 // Clear the stack for the next iteration
                 eval.stack.clear();
                 bump.reset();
