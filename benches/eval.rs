@@ -18,9 +18,11 @@ where
     let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
     let mut bump = Bump::with_capacity(16_000);
     let bump_ptr = &mut bump as *mut Bump;
+    let instructions = vec![];
 
     unsafe {
-        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
+        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs, &instructions);
+
         let eval_ptr = &mut eval as *mut ZapEval;
 
         c.bench_function(name, |b| {

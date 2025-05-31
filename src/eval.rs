@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use bumpalo::collections::Vec as BumpVec;
 use crypto_bigint::CheckedAdd;
 
-use crate::{trim_leading_zeros, ZAP_STACK_CAPACITY};
+use crate::{Instruction, ZAP_STACK_CAPACITY, trim_leading_zeros};
 
 /// Represents a value that can be stored on the stack in the ZAP VM.
 /// The size of this enum is 24 bytes
@@ -30,6 +30,8 @@ pub struct ZapEval<'a> {
     bump: &'a bumpalo::Bump,
     pub vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
     pub registers: [StackValue<'a>; 256],
+    program: &'a [Instruction],
+    program_counter: usize,
 }
 
 impl<'a> ZapEval<'a> {
@@ -39,6 +41,7 @@ impl<'a> ZapEval<'a> {
         stack: &'a mut Vec<StackValue<'a>>,
         bump: &'a bumpalo::Bump,
         vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
+        program: &'a [Instruction],
     ) -> Self {
         if !stack.is_empty() {
             panic!("Stack must be empty before creating ZapEval");
@@ -67,6 +70,32 @@ impl<'a> ZapEval<'a> {
             bump,
             vecs,
             registers,
+            program,
+            program_counter: 0,
+        }
+    }
+
+    pub fn run(&mut self) {
+        while self.program_counter < self.program.len() {
+            let instruction = &self.program[self.program_counter];
+            self.execute_instruction(instruction);
+            self.program_counter += 1;
+        }
+    }
+
+    pub fn execute_instruction(&mut self, instruction: &'a Instruction) {
+        match instruction {
+            Instruction::PushInt(value) => self.op_push_int(*value),
+            Instruction::PushBytes(bytes) => self.op_push_bytes(bytes),
+            Instruction::BytesLen => self.op_bytes_len(),
+            Instruction::Add => self.op_add(),
+            Instruction::InitVecWithInitialCapacity => self.op_init_vec_with_initial_capacity(),
+            Instruction::PushVec => self.op_push_vec(),
+            Instruction::RegStore => self.op_reg_store(),
+            Instruction::RegLoad => self.op_reg_load(),
+            Instruction::ByteAdd => self.op_byte_add(),
+            Instruction::ByteSqrt => self.op_byte_sqrt(),
+            Instruction::Ed25519Verify => self.op_ed25519_verify(),
         }
     }
 
@@ -246,13 +275,15 @@ mod tests {
         assert_eq!(core::mem::size_of::<StackValue>(), 24);
     }
 
+    const EMPTY_PROGRAM: &[Instruction] = &[];
+
     #[test]
     fn bytes_len() {
         let bump = Bump::new();
 
         let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, EMPTY_PROGRAM);
 
         let bytes = bump.alloc([1, 2, 3, 4]);
         eval.op_push_bytes(bytes);
@@ -271,7 +302,7 @@ mod tests {
         let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, EMPTY_PROGRAM);
         eval.op_push_int(2);
         eval.op_init_vec_with_initial_capacity();
         eval.op_push_int(42);
@@ -295,7 +326,7 @@ mod tests {
         let bump = Bump::new();
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, EMPTY_PROGRAM);
 
         eval.op_push_int(5);
         eval.op_push_int(3);
@@ -312,7 +343,7 @@ mod tests {
         let bump = Bump::new();
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, EMPTY_PROGRAM);
 
         eval.op_push_int(42);
         eval.op_push_int(0);
@@ -332,7 +363,7 @@ mod tests {
         let bump = Bump::new();
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, EMPTY_PROGRAM);
 
         let bytes1 = bump.alloc([2]);
         let bytes2 = bump.alloc([3]);
@@ -345,6 +376,47 @@ mod tests {
             assert_eq!(result, bump.alloc([5]));
         } else {
             panic!("Expected a Bytes result on the stack");
+        }
+    }
+
+    #[test]
+    fn test_run_program() {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+
+        // Create a program that:
+        // 1. Pushes 10 onto the stack
+        // 2. Pushes 20 onto the stack
+        // 3. Adds the two numbers
+        // 4. Stores the result in register 0
+        // 5. Pushes 5 onto the stack
+        // 6. Loads the value from register 0
+        // 7. Adds the two numbers
+        let program = [
+            Instruction::PushInt(10),
+            Instruction::PushInt(20),
+            Instruction::Add,
+            Instruction::PushInt(0),
+            Instruction::RegStore,
+            Instruction::PushInt(5),
+            Instruction::PushInt(0),
+            Instruction::RegLoad,
+            Instruction::Add,
+        ];
+
+        // Create ZapEval with our program
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
+        
+        // Run the entire program
+        eval.run();
+
+        // Check the final state - we should have 35 on the stack (30 + 5)
+        assert_eq!(eval.stack.len(), 1);
+        if let StackValue::U64(result) = &eval.stack[0] {
+            assert_eq!(*result, 35);
+        } else {
+            panic!("Expected a U64 result on the stack");
         }
     }
 }
