@@ -202,6 +202,27 @@ impl<'a> ZapEval<'a> {
             panic!("Invalid stack state for byte addition");
         }
     }
+
+    pub fn op_byte_sqrt(&mut self) {
+        if let Some(StackValue::Bytes(bytes)) = self.pop() {
+            let num: crypto_bigint::U512;
+            if bytes.len() < 64 {
+                let mut padded_bytes = [0u8; 64];
+                padded_bytes[64 - bytes.len()..].copy_from_slice(bytes);
+                num = crypto_bigint::U512::from_be_slice(&padded_bytes);
+            } else {
+                num = crypto_bigint::U512::from_be_slice(bytes);
+            }
+
+            let result = num.sqrt();
+
+            let result_bytes = self.bump.alloc(result.to_be_bytes());
+
+            self.push(StackValue::Bytes(trim_leading_zeros(result_bytes)));
+        } else {
+            panic!("Expected Bytes on the stack for square root operation");
+        }
+    }
 }
 
 #[cfg(test)]

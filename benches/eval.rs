@@ -186,7 +186,7 @@ fn benchmark_op_byte_add_u256(c: &mut Criterion) {
 
     run_benchmark(
         c,
-        "op_byte_add_u512",
+        "op_byte_add_u256",
         |eval| {
             // Push two bytes onto the stack
             eval.op_push_bytes(black_box(bytes_ref));
@@ -198,8 +198,29 @@ fn benchmark_op_byte_add_u256(c: &mut Criterion) {
     );
 }
 
+fn benchmark_op_byte_sqrt_u512(c: &mut Criterion) {
+    let hex128 = "102030405060708090a0b0c0d0e0f000";
+    let u512 = format!("{}", hex128.repeat(4));
+    let u512_bytes = ManuallyDrop::new(hex::decode(u512).expect("Failed to decode hex string"));
+
+    let u512_bytes_ref = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&u512_bytes) };
+
+    run_benchmark(
+        c,
+        "op_byte_byte_sqrt_u512",
+        |eval| {
+            // Push two bytes onto the stack
+            eval.op_push_bytes(black_box(u512_bytes_ref));
+        },
+        |eval| {
+            eval.op_byte_sqrt();
+        },
+    );
+}
+
 criterion_group!(
     benches,
+    benchmark_op_byte_sqrt_u512,
     benchmark_op_byte_add_u256,
     benchmark_op_byte_add_u512,
     benchmark_alternating_vecs_over_capacity,
