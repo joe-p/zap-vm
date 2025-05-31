@@ -1,13 +1,18 @@
 use std::mem::ManuallyDrop;
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 extern crate alloc;
 
 use alloc::vec::Vec;
 use bumpalo::Bump;
 use zap_vm::{ZAP_STACK_CAPACITY, ZapEval};
 
-fn benchmark_op_add(c: &mut Criterion) {
+// Helper function to reduce code duplication across benchmarks
+fn run_benchmark<S, M>(c: &mut Criterion, name: &str, setup: S, measure: M)
+where
+    S: Fn(&mut ZapEval) + Copy,
+    M: Fn(&mut ZapEval) + Copy,
+{
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
     let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
     let mut bump = Bump::with_capacity(16_000);
@@ -16,195 +21,139 @@ fn benchmark_op_add(c: &mut Criterion) {
     unsafe {
         let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
         let eval_ptr = &mut eval as *mut ZapEval;
-        c.bench_function("op_add", |b| {
+
+        c.bench_function(name, |b| {
             b.iter_batched(
                 || {
                     let eval = &mut *eval_ptr;
                     eval.stack.clear();
                     bump.reset();
-                    // Push two integers onto the stack
-                    eval.op_push_int(black_box(5));
-                    eval.op_push_int(black_box(3));
+                    setup(eval);
                 },
                 |_| {
-                    eval.op_add();
+                    measure(&mut *eval_ptr);
                 },
-                criterion::BatchSize::PerIteration,
+                BatchSize::PerIteration,
             );
         });
     }
+}
+
+fn benchmark_op_add(c: &mut Criterion) {
+    run_benchmark(
+        c,
+        "op_add",
+        |eval| {
+            // Push two integers onto the stack
+            eval.op_push_int(black_box(5));
+            eval.op_push_int(black_box(3));
+        },
+        |eval| {
+            eval.op_add();
+        },
+    );
 }
 
 fn benchmark_op_init_vec(c: &mut Criterion) {
-    let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-    let mut bump = Bump::with_capacity(16_000);
-    let bump_ptr = &mut bump as *mut Bump;
-
-    unsafe {
-        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
-        let eval_ptr = &mut eval as *mut ZapEval;
-        c.bench_function("op_init_vec_capacity_10", |b| {
-            b.iter_batched(
-                || {
-                    let eval = &mut *eval_ptr;
-                    eval.stack.clear();
-                    bump.reset();
-                    eval.op_push_int(black_box(10));
-                },
-                |_| {
-                    eval.op_init_vec_with_initial_capacity();
-                },
-                criterion::BatchSize::PerIteration,
-            );
-        });
-    }
+    run_benchmark(
+        c,
+        "op_init_vec_capacity_10",
+        |eval| {
+            eval.op_push_int(black_box(10));
+        },
+        |eval| {
+            eval.op_init_vec_with_initial_capacity();
+        },
+    );
 }
 
 fn benchmark_op_push_vec(c: &mut Criterion) {
-    let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-    let mut bump = Bump::with_capacity(16_000);
-    let bump_ptr = &mut bump as *mut Bump;
+    run_benchmark(
+        c,
+        "op_push_vec_single_item",
+        |eval| {
+            // Create a vector first
+            eval.op_push_int(black_box(10));
+            eval.op_init_vec_with_initial_capacity();
 
-    unsafe {
-        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
-        let eval_ptr = &mut eval as *mut ZapEval;
-
-        c.bench_function("op_push_vec_single_item", |b| {
-            b.iter_batched(
-                || {
-                    let eval = &mut *eval_ptr;
-                    eval.stack.clear();
-                    bump.reset();
-                    // Create a vector first
-                    eval.op_push_int(black_box(10));
-                    eval.op_init_vec_with_initial_capacity();
-
-                    // Push an item to the vector
-                    eval.op_push_int(black_box(42));
-                },
-                |_| {
-                    eval.op_push_vec();
-                },
-                criterion::BatchSize::PerIteration,
-            );
-        });
-    }
+            // Push an item to the vector
+            eval.op_push_int(black_box(42));
+        },
+        |eval| {
+            eval.op_push_vec();
+        },
+    );
 }
 
 fn benchmark_multiple_push_ops(c: &mut Criterion) {
-    let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-    let mut bump = Bump::with_capacity(16_000);
-    let bump_ptr = &mut bump as *mut Bump;
-
-    unsafe {
-        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
-        let eval_ptr = &mut eval as *mut ZapEval;
-
-        c.bench_function("push_10_items_to_vec", |b| {
-            b.iter_batched(
-                || {
-                    let eval = &mut *eval_ptr;
-                    eval.stack.clear();
-                    bump.reset();
-                    // Create a vector
-                    eval.op_push_int(black_box(10));
-                    eval.op_init_vec_with_initial_capacity();
-                },
-                |_| {
-                    // Push 10 items
-                    for i in 0..10 {
-                        eval.op_push_int(black_box(i));
-                        eval.op_push_vec();
-                    }
-                },
-                criterion::BatchSize::PerIteration,
-            );
-        });
-    }
+    run_benchmark(
+        c,
+        "push_10_items_to_vec",
+        |eval| {
+            // Create a vector
+            eval.op_push_int(black_box(10));
+            eval.op_init_vec_with_initial_capacity();
+        },
+        |eval| {
+            // Push 10 items
+            for i in 0..10 {
+                eval.op_push_int(black_box(i));
+                eval.op_push_vec();
+            }
+        },
+    );
 }
 
 fn benchmark_multiple_push_over_capacity(c: &mut Criterion) {
-    let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-    let mut bump = Bump::with_capacity(16_000);
-    let bump_ptr = &mut bump as *mut Bump;
-
-    unsafe {
-        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
-        let eval_ptr = &mut eval as *mut ZapEval;
-
-        c.bench_function("push_10_items_over_capacity", |b| {
-            b.iter_batched(
-                || {
-                    let eval = &mut *eval_ptr;
-                    eval.stack.clear();
-                    bump.reset();
-                    // Create a vector
-                    eval.op_push_int(black_box(1));
-                    eval.op_init_vec_with_initial_capacity();
-                },
-                |_| {
-                    // Push 10 items
-                    for i in 0..11 {
-                        eval.op_push_int(black_box(i));
-                        eval.op_push_vec();
-                    }
-                },
-                criterion::BatchSize::PerIteration,
-            );
-        });
-    }
+    run_benchmark(
+        c,
+        "push_10_items_over_capacity",
+        |eval| {
+            // Create a vector
+            eval.op_push_int(black_box(1));
+            eval.op_init_vec_with_initial_capacity();
+        },
+        |eval| {
+            // Push 10 items
+            for i in 0..11 {
+                eval.op_push_int(black_box(i));
+                eval.op_push_vec();
+            }
+        },
+    );
 }
 
 fn benchmark_alternating_vecs_over_capacity(c: &mut Criterion) {
-    let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-    let mut bump = Bump::with_capacity(16_000);
-    let bump_ptr = &mut bump as *mut Bump;
+    run_benchmark(
+        c,
+        "alternating_vecs_over_capacity",
+        |eval| {
+            // Create a vector with initial capacity
+            eval.op_push_int(1);
+            eval.op_init_vec_with_initial_capacity();
+            eval.op_push_int(2);
+            eval.op_reg_store(); // Store in reg 2
 
-    unsafe {
-        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
-        let eval_ptr = &mut eval as *mut ZapEval;
+            eval.op_push_int(1);
+            eval.op_init_vec_with_initial_capacity();
+            eval.op_push_int(3);
+            eval.op_reg_store(); // Store in reg 3
+        },
+        |eval| {
+            // Push 10 items
+            for i in 0..11 {
+                eval.op_push_int(2);
+                eval.op_reg_load();
+                eval.op_push_int(black_box(i + 10));
+                eval.op_push_vec();
 
-        c.bench_function("alternating_vecs_over_capacity", |b| {
-            b.iter_batched(
-                || {
-                    let eval = &mut *eval_ptr;
-                    eval.stack.clear();
-                    bump.reset();
-
-                    // Create a vector with initial capacity
-                    eval.op_push_int(1);
-                    eval.op_init_vec_with_initial_capacity();
-                    eval.op_push_int(2);
-                    eval.op_reg_store(); // Store in reg 2
-
-                    eval.op_push_int(1);
-                    eval.op_init_vec_with_initial_capacity();
-                    eval.op_push_int(3);
-                    eval.op_reg_store(); // Store in reg 3
-                },
-                |_| {
-                    // Push 10 items
-                    for i in 0..11 {
-                        eval.op_push_int(2);
-                        eval.op_reg_load();
-                        eval.op_push_int(black_box(i + 10));
-                        eval.op_push_vec();
-
-                        eval.op_push_int(3);
-                        eval.op_reg_load();
-                        eval.op_push_int(black_box(i + 10));
-                        eval.op_push_vec();
-                    }
-                },
-                criterion::BatchSize::PerIteration,
-            );
-        });
-    }
+                eval.op_push_int(3);
+                eval.op_reg_load();
+                eval.op_push_int(black_box(i + 10));
+                eval.op_push_vec();
+            }
+        },
+    );
 }
 
 criterion_group!(
