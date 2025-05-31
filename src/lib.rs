@@ -223,6 +223,22 @@ impl<'a> ZapEval<'a> {
             panic!("Expected Bytes on the stack for square root operation");
         }
     }
+
+    pub fn op_ed25519_verify(&mut self) {
+        if let (
+            Some(StackValue::Bytes(signature)),
+            Some(StackValue::Bytes(public_key)),
+            Some(StackValue::Bytes(message)),
+        ) = (self.pop(), self.pop(), self.pop())
+        {
+            let public_key = ed25519_dalek::VerifyingKey::try_from(public_key).unwrap();
+            let signature = ed25519_dalek::Signature::try_from(signature).unwrap();
+            let is_valid = public_key.verify_strict(message, &signature).is_ok();
+            self.push(StackValue::U64(if is_valid { 1 } else { 0 }));
+        } else {
+            panic!("Expected Bytes for signature, message, and public key on the stack");
+        }
+    }
 }
 
 #[cfg(test)]

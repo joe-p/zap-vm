@@ -6,11 +6,13 @@ edition = "2024"
 [dependencies]
 bumpalo = { version = "3.17.0", features = ["collections"] }
 crypto-bigint = { version = "0.6.1", default-features = false }
+ed25519-dalek = { version = "2.1.1", default-features = false }
 slotmap = { version = "1.0.7", default-features = false }
 
 [dev-dependencies]
 criterion = "0.5"
 hex = "0.4.3"
+rand = "0.9.1"
 
 [[bench]]
 name = "eval"

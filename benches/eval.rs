@@ -1,6 +1,7 @@
-use std::mem::ManuallyDrop;
-
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
+use ed25519_dalek::{SigningKey, ed25519::signature::SignerMut};
+use rand::Rng;
+use std::mem::ManuallyDrop;
 extern crate alloc;
 
 use alloc::vec::Vec;
@@ -218,8 +219,43 @@ fn benchmark_op_byte_sqrt_u512(c: &mut Criterion) {
     );
 }
 
+fn benchmark_op_ed25516_verify(c: &mut Criterion) {
+    // Create a random number generator
+    let mut rng = rand::rng();
+
+    // Generate 32 random bytes
+    let random_bytes: [u8; 32] = rng.random();
+    let mut signing_key: SigningKey = SigningKey::from(random_bytes);
+
+    let public_key = signing_key.verifying_key();
+
+    let message = b"Hello, world!";
+    let signature = signing_key.sign(message);
+
+    let sig_bytes = signature.to_bytes();
+    let sig_bytes_ref = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&sig_bytes) };
+
+    let public_key_bytes = public_key.to_bytes();
+    let public_key_bytes_ref =
+        unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&public_key_bytes) };
+
+    run_benchmark(
+        c,
+        "op_ed25519_verify",
+        |eval| {
+            eval.op_push_bytes(black_box(b"Hello, world!"));
+            eval.op_push_bytes(black_box(public_key_bytes_ref));
+            eval.op_push_bytes(black_box(sig_bytes_ref));
+        },
+        |eval| {
+            eval.op_ed25519_verify();
+        },
+    );
+}
+
 criterion_group!(
     benches,
+    benchmark_op_ed25516_verify,
     benchmark_op_byte_sqrt_u512,
     benchmark_op_byte_add_u256,
     benchmark_op_byte_add_u512,
