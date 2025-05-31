@@ -5,10 +5,12 @@ edition = "2024"
 
 [dependencies]
 bumpalo = { version = "3.17.0", features = ["collections"] }
+crypto-bigint = { version = "0.6.1", default-features = false }
 slotmap = { version = "1.0.7", default-features = false }
 
 [dev-dependencies]
 criterion = "0.5"
+hex = "0.4.3"
 
 [[bench]]
 name = "eval"

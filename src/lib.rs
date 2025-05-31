@@ -4,18 +4,25 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use bumpalo::collections::Vec as BumpVec;
+use crypto_bigint::CheckedAdd;
 
 pub const ZAP_STACK_CAPACITY: usize = 1000;
 
-/// Represents a value that can be stored on the stack in the ZAP.
-/// Each value is 8 bytes in size, thus the total size of this enum is ~9 bytes,
-/// but will be 16 bytes due to alignment.
+fn trim_leading_zeros(bytes: &[u8]) -> &[u8] {
+    let first_non_zero = bytes.iter().position(|&b| b != 0).unwrap_or(bytes.len());
+    &bytes[first_non_zero..]
+}
+
+/// Represents a value that can be stored on the stack in the ZAP VM.
+/// The size of this enum is 24 bytes
 #[derive(Clone, Default, Debug)]
 pub enum StackValue<'a> {
     /// Unsigned 64-bit integer value.
     U64(u64),
     /// Byte array allocated in the bump allocator.
-    Bytes(&'a BumpVec<'a, u8>),
+    // NOTE: There is a small performance penalty for using arrays over vecs here. Presumably
+    // because the array is larger in size on the stack
+    Bytes(&'a [u8]),
     /// Vector of StackValues, allocated in the bump allocator.
     Vec(u64),
     #[default]
@@ -85,7 +92,7 @@ impl<'a> ZapEval<'a> {
         self.push(StackValue::U64(value));
     }
 
-    pub fn op_push_bytes(&mut self, bytes: &'a BumpVec<'a, u8>) {
+    pub fn op_push_bytes(&mut self, bytes: &'a [u8]) {
         self.push(StackValue::Bytes(bytes));
     }
 
@@ -160,6 +167,41 @@ impl<'a> ZapEval<'a> {
             _ => panic!("Expected a U64 register index on the stack"),
         }
     }
+
+    pub fn op_byte_add(&mut self) {
+        if let (Some(StackValue::Bytes(left)), Some(StackValue::Bytes(right))) =
+            (self.pop(), self.pop())
+        {
+            let left_num: crypto_bigint::U512;
+            let right_num: crypto_bigint::U512;
+
+            if left.len() < 64 {
+                let mut padded_left = [0u8; 64];
+                padded_left[64 - left.len()..].copy_from_slice(left);
+                left_num = crypto_bigint::U512::from_be_slice(&padded_left);
+            } else {
+                left_num = crypto_bigint::U512::from_be_slice(left);
+            }
+
+            if right.len() < 64 {
+                let mut padded_right = [0u8; 64];
+                padded_right[64 - right.len()..].copy_from_slice(right);
+                right_num = crypto_bigint::U512::from_be_slice(&padded_right);
+            } else {
+                right_num = crypto_bigint::U512::from_be_slice(right);
+            }
+
+            let result = left_num
+                .checked_add(&right_num)
+                .expect("Byte addition overflow");
+
+            let result_bytes = self.bump.alloc(result.to_be_bytes());
+
+            self.push(StackValue::Bytes(trim_leading_zeros(result_bytes)));
+        } else {
+            panic!("Invalid stack state for byte addition");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -171,8 +213,7 @@ mod tests {
 
     #[test]
     fn stack_value_size() {
-        // Ensure that StackValue is 8 bytes in size
-        assert_eq!(core::mem::size_of::<StackValue>(), 16);
+        assert_eq!(core::mem::size_of::<StackValue>(), 24);
     }
 
     #[test]
@@ -180,12 +221,11 @@ mod tests {
         let bump = Bump::new();
 
         let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        let mut bytes = BumpVec::with_capacity_in(4, &bump);
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
 
-        bytes.extend_from_slice(&[1, 2, 3, 4]);
-        eval.op_push_bytes(&bytes);
+        let bytes = bump.alloc([1, 2, 3, 4]);
+        eval.op_push_bytes(bytes);
         eval.op_bytes_len();
 
         if let Some(StackValue::U64(len)) = eval.pop() {
@@ -254,6 +294,27 @@ mod tests {
             assert_eq!(result, 42);
         } else {
             panic!("Expected a Uint result on the stack");
+        }
+    }
+
+    #[test]
+    pub fn byte_add() {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+
+        let bytes1 = bump.alloc([2]);
+        let bytes2 = bump.alloc([3]);
+
+        eval.op_push_bytes(bytes1);
+        eval.op_push_bytes(bytes2);
+        eval.op_byte_add();
+
+        if let Some(StackValue::Bytes(result)) = eval.pop() {
+            assert_eq!(result, bump.alloc([5]));
+        } else {
+            panic!("Expected a Bytes result on the stack");
         }
     }
 }
