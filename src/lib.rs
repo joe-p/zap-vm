@@ -53,8 +53,11 @@ impl<'a> ZapEval<'a> {
         }
 
         #[cfg(not(test))]
-        if bump.allocated_bytes() != 0 {
-            panic!("Bump allocator must be empty before creating ZapEval");
+        if bump.allocated_bytes() != bump.chunk_capacity() {
+            panic!(
+                "Bump allocator must be empty before creating ZapEval, but it has {} bytes allocated",
+                bump.allocated_bytes() - bump.chunk_capacity()
+            );
         }
 
         let registers = [const { StackValue::Void }; 256];

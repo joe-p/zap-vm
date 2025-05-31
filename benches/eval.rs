@@ -8,148 +8,171 @@ use bumpalo::Bump;
 use zap_vm::{ZAP_STACK_CAPACITY, ZapEval};
 
 fn benchmark_op_add(c: &mut Criterion) {
-    let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
     let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+    let mut bump = Bump::with_capacity(16_000);
+    let bump_ptr = &mut bump as *mut Bump;
 
-    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
-
-    c.bench_function("op_add", |b| {
-        b.iter(|| {
-            // Push two integers onto the stack
-            eval.op_push_int(black_box(5));
-            eval.op_push_int(black_box(3));
-            // Perform the addition operation
-            //           eval.op_add();
-            // Clear the stack for the next iteration
-            eval.stack.clear();
+    unsafe {
+        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
+        c.bench_function("op_add", |b| {
+            b.iter(|| {
+                // Push two integers onto the stack
+                eval.op_push_int(black_box(5));
+                eval.op_push_int(black_box(3));
+                // Perform the addition operation
+                //           eval.op_add();
+                // Clear the stack for the next iteration
+                eval.stack.clear();
+                bump.reset();
+            });
         });
-    });
+    }
 }
 
 fn benchmark_op_init_vec(c: &mut Criterion) {
-    c.bench_function("op_init_vec_capacity_10", |b| {
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        let bump = Bump::new();
+    let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+    let mut bump = Bump::with_capacity(16_000);
+    let bump_ptr = &mut bump as *mut Bump;
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
-
-        b.iter(|| {
-            // Initialize a vector with capacity 10
-            eval.op_push_int(black_box(10));
-            eval.op_init_vec_with_initial_capacity();
-            eval.stack.clear()
+    unsafe {
+        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
+        c.bench_function("op_init_vec_capacity_10", |b| {
+            b.iter(|| {
+                // Initialize a vector with capacity 10
+                eval.op_push_int(black_box(10));
+                eval.op_init_vec_with_initial_capacity();
+                eval.stack.clear();
+                bump.reset();
+            });
         });
-    });
+    }
 }
 
 fn benchmark_op_push_vec(c: &mut Criterion) {
-    let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
     let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+    let mut bump = Bump::with_capacity(16_000);
+    let bump_ptr = &mut bump as *mut Bump;
 
-    c.bench_function("op_push_vec_single_item", |b| {
-        b.iter(|| {
-            // Create a vector first
-            eval.op_push_int(black_box(10));
-            eval.op_init_vec_with_initial_capacity();
+    unsafe {
+        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
 
-            // Push an item to the vector
-            eval.op_push_int(black_box(42));
-            eval.op_push_vec();
+        c.bench_function("op_push_vec_single_item", |b| {
+            b.iter(|| {
+                // Create a vector first
+                eval.op_push_int(black_box(10));
+                eval.op_init_vec_with_initial_capacity();
 
-            eval.stack.clear();
+                // Push an item to the vector
+                eval.op_push_int(black_box(42));
+                eval.op_push_vec();
+
+                eval.stack.clear();
+                bump.reset();
+            });
         });
-    });
+    }
 }
 
 fn benchmark_multiple_push_ops(c: &mut Criterion) {
-    let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
     let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+    let mut bump = Bump::with_capacity(16_000);
+    let bump_ptr = &mut bump as *mut Bump;
 
-    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+    unsafe {
+        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
 
-    c.bench_function("push_10_items_to_vec", |b| {
-        b.iter(|| {
-            // Create a vector
-            eval.op_push_int(black_box(10));
-            eval.op_init_vec_with_initial_capacity();
+        c.bench_function("push_10_items_to_vec", |b| {
+            b.iter(|| {
+                // Create a vector
+                eval.op_push_int(black_box(10));
+                eval.op_init_vec_with_initial_capacity();
 
-            // Push 10 items
-            for i in 0..10 {
-                eval.op_push_int(black_box(i));
-                eval.op_push_vec();
-            }
+                // Push 10 items
+                for i in 0..10 {
+                    eval.op_push_int(black_box(i));
+                    eval.op_push_vec();
+                }
 
-            eval.stack.clear()
+                eval.stack.clear();
+                bump.reset();
+            });
         });
-    });
+    }
 }
 
 fn benchmark_multiple_push_over_capacity(c: &mut Criterion) {
-    let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
     let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+    let mut bump = Bump::with_capacity(16_000);
+    let bump_ptr = &mut bump as *mut Bump;
 
-    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+    unsafe {
+        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
 
-    c.bench_function("push_10_items_over_capacity", |b| {
-        b.iter(|| {
-            // Create a vector
-            eval.op_push_int(black_box(1));
-            eval.op_init_vec_with_initial_capacity();
+        c.bench_function("push_10_items_over_capacity", |b| {
+            b.iter(|| {
+                // Create a vector
+                eval.op_push_int(black_box(1));
+                eval.op_init_vec_with_initial_capacity();
 
-            // Push 10 items
-            for i in 0..11 {
-                eval.op_push_int(black_box(i));
-                eval.op_push_vec();
-            }
+                // Push 10 items
+                for i in 0..11 {
+                    eval.op_push_int(black_box(i));
+                    eval.op_push_vec();
+                }
 
-            eval.stack.clear()
+                eval.stack.clear();
+                bump.reset();
+            });
         });
-    });
+    }
 }
 
 fn benchmark_alternating_vecs_over_capacity(c: &mut Criterion) {
-    let bump = Bump::new();
     let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
     let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+    let mut bump = Bump::with_capacity(16_000);
+    let bump_ptr = &mut bump as *mut Bump;
 
-    let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs);
+    unsafe {
+        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs);
 
-    c.bench_function("alternating_vecs_over_capacity", |b| {
-        b.iter(|| {
-            // Create a vector with initial capacity
-            eval.op_push_int(1);
-            eval.op_init_vec_with_initial_capacity();
-            eval.op_push_int(2);
-            eval.op_reg_store(); // Store in reg 2
-
-            eval.op_push_int(1);
-            eval.op_init_vec_with_initial_capacity();
-            eval.op_push_int(3);
-            eval.op_reg_store(); // Store in reg 3
-
-            // Push 10 items
-            for i in 0..11 {
+        c.bench_function("alternating_vecs_over_capacity", |b| {
+            b.iter(|| {
+                // Create a vector with initial capacity
+                eval.op_push_int(1);
+                eval.op_init_vec_with_initial_capacity();
                 eval.op_push_int(2);
-                eval.op_reg_load();
-                eval.op_push_int(black_box(i + 10));
-                eval.op_push_vec();
+                eval.op_reg_store(); // Store in reg 2
 
+                eval.op_push_int(1);
+                eval.op_init_vec_with_initial_capacity();
                 eval.op_push_int(3);
-                eval.op_reg_load();
-                eval.op_push_int(black_box(i + 10));
-                eval.op_push_vec();
-            }
+                eval.op_reg_store(); // Store in reg 3
 
-            // Clear the stack for the next iteration
-            eval.stack.clear();
+                // Push 10 items
+                for i in 0..11 {
+                    eval.op_push_int(2);
+                    eval.op_reg_load();
+                    eval.op_push_int(black_box(i + 10));
+                    eval.op_push_vec();
+
+                    eval.op_push_int(3);
+                    eval.op_reg_load();
+                    eval.op_push_int(black_box(i + 10));
+                    eval.op_push_vec();
+                }
+
+                // Clear the stack for the next iteration
+                eval.stack.clear();
+                bump.reset();
+            });
         });
-    });
+    }
 }
 
 criterion_group!(
