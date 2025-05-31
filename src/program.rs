@@ -14,6 +14,7 @@ pub enum Instruction {
     ByteAdd,
     ByteSqrt,
     Ed25519Verify,
+    Branch(u16),
 }
 
 // Opcodes for instructions
@@ -29,6 +30,7 @@ pub mod opcodes {
     pub const BYTE_ADD: u8 = 0x09;
     pub const BYTE_SQRT: u8 = 0x0A;
     pub const ED25519_VERIFY: u8 = 0x0B;
+    pub const BRANCH: u8 = 0x0C;
 }
 
 #[derive(Debug)]
@@ -105,6 +107,18 @@ impl Instruction {
                 }
                 opcodes::ED25519_VERIFY => {
                     instructions.push(Instruction::Ed25519Verify);
+                }
+                opcodes::BRANCH => {
+                    if index + 2 > bytes.len() {
+                        return Err(InstructionParseError::UnexpectedEndOfBytes);
+                    }
+
+                    let mut branch_bytes = [0u8; 2];
+                    branch_bytes.copy_from_slice(&bytes[index..index + 2]);
+                    let branch = u16::from_be_bytes(branch_bytes);
+
+                    instructions.push(Instruction::Branch(branch));
+                    index += 2;
                 }
                 _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
             }

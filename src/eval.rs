@@ -78,8 +78,11 @@ impl<'a> ZapEval<'a> {
     pub fn run(&mut self) {
         while self.program_counter < self.program.len() {
             let instruction = &self.program[self.program_counter];
-            self.execute_instruction(instruction);
+
+            // Increment BEFORE executing the instruction so branching
+            // opcodes can go back to zero without overflowing
             self.program_counter += 1;
+            self.execute_instruction(instruction);
         }
     }
 
@@ -96,6 +99,7 @@ impl<'a> ZapEval<'a> {
             Instruction::ByteAdd => self.op_byte_add(),
             Instruction::ByteSqrt => self.op_byte_sqrt(),
             Instruction::Ed25519Verify => self.op_ed25519_verify(),
+            Instruction::Branch(target) => self.op_branch(*target as usize),
         }
     }
 
@@ -108,6 +112,13 @@ impl<'a> ZapEval<'a> {
 
     pub fn pop(&mut self) -> Option<StackValue<'a>> {
         self.stack.pop()
+    }
+
+    pub fn op_branch(&mut self, target: usize) {
+        if target as usize >= self.program.len() {
+            panic!("Branch target out of bounds: {}", target);
+        }
+        self.program_counter = target
     }
 
     pub fn op_push_int(&mut self, value: u64) {
@@ -407,7 +418,7 @@ mod tests {
 
         // Create ZapEval with our program
         let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        
+
         // Run the entire program
         eval.run();
 
@@ -415,6 +426,31 @@ mod tests {
         assert_eq!(eval.stack.len(), 1);
         if let StackValue::U64(result) = &eval.stack[0] {
             assert_eq!(*result, 35);
+        } else {
+            panic!("Expected a U64 result on the stack");
+        }
+    }
+
+    #[test]
+    pub fn op_branch() {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+
+        // Create a program with a branch
+        let program = [
+            Instruction::Branch(2),  // Branch to instruction 2
+            Instruction::PushInt(1), // This should be skipped
+            Instruction::PushInt(2), // This should be executed
+        ];
+
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
+        eval.run();
+
+        // Check the final state - we should have 2 on the stack
+        assert_eq!(eval.stack.len(), 1);
+        if let StackValue::U64(result) = &eval.stack[0] {
+            assert_eq!(*result, 2);
         } else {
             panic!("Expected a U64 result on the stack");
         }
