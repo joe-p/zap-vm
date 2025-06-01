@@ -311,6 +311,19 @@ mod tests {
     use super::*;
     use bumpalo::Bump;
 
+    fn run_test(program: &[Instruction], expected_stack: &[StackValue], additional_assertions: impl FnOnce(&ZapEval)) {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, program);
+        eval.run();
+
+        assert_eq!(eval.stack, expected_stack);
+
+        additional_assertions(&eval);
+    }
+
     #[test]
     fn stack_value_size() {
         assert_eq!(core::mem::size_of::<StackValue>(), 16);
@@ -318,10 +331,6 @@ mod tests {
 
     #[test]
     fn bytes_len() {
-        let bump = Bump::new();
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-
         // Create a program with PushBytes and BytesLen instructions
         let test_bytes = [1, 2, 3, 4].to_vec();
         let program = [
@@ -329,24 +338,15 @@ mod tests {
             Instruction::BytesLen,
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
+        let expected_stack = [StackValue::U64(4)];
 
-        // Check the final state
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::U64(len) = &eval.stack[0] {
-            assert_eq!(*len, 4);
-        } else {
-            panic!("Expected a Uint result on the stack");
-        }
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 
     #[test]
     fn vec_push() {
-        let bump = Bump::new();
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-
         let program = [
             Instruction::PushInt(2),                  // Push initial capacity for Vec
             Instruction::InitVecWithInitialCapacity,  // Initialize Vec with capacity 2
@@ -354,54 +354,40 @@ mod tests {
             Instruction::PushVec,                     // Push the value onto the Vec
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
-
-        // Check the final state - Vec should be on the stack
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::Vec(vec_idx) = &eval.stack[0] {
-            let vec = &eval.vecs[vec_idx.0 as usize];
-            assert_eq!(vec.len(), 1);
-            if let StackValue::U64(value) = vec[0] {
-                assert_eq!(value, 42);
+        run_test(&program, &[StackValue::Vec(VecHandle(0))], |eval| {
+            // Check the final state - Vec should be on the stack
+            assert_eq!(eval.stack.len(), 1);
+            if let StackValue::Vec(vec_idx) = &eval.stack[0] {
+                let vec = &eval.vecs[vec_idx.0 as usize];
+                assert_eq!(vec.len(), 1);
+                if let StackValue::U64(value) = vec[0] {
+                    assert_eq!(value, 42);
+                } else {
+                    panic!("Expected a U64 value in the Vec");
+                }
             } else {
-                panic!("Expected a U64 value in the Vec");
+                panic!("Expected a Vec on the stack");
             }
-        } else {
-            panic!("Expected a Vec on the stack");
-        }
+        });
     }
 
     #[test]
     fn add() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        
         let program = [
             Instruction::PushInt(5),
             Instruction::PushInt(3),
             Instruction::Add,
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
+        let expected_stack = [StackValue::U64(8)];
 
-        // Check the final state - we should have the sum on the stack
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::U64(result) = &eval.stack[0] {
-            assert_eq!(*result, 8);
-        } else {
-            panic!("Expected a U64 result on the stack");
-        }
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 
     #[test]
     fn reg_store_load() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        
         let program = [
             Instruction::PushInt(42),  // Push the value to store
             Instruction::PushInt(0),   // Push register index
@@ -410,24 +396,15 @@ mod tests {
             Instruction::RegLoad,      // Load value from register 0
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
+        let expected_stack = [StackValue::U64(42)];
 
-        // Check the final state - we should have the loaded value on the stack
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::U64(result) = &eval.stack[0] {
-            assert_eq!(*result, 42);
-        } else {
-            panic!("Expected a U64 result on the stack");
-        }
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 
     #[test]
     pub fn byte_add() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        
         // Create a program that tests byte addition
         let program = [
             Instruction::PushBytes(vec![2]),  // Push first byte
@@ -435,24 +412,19 @@ mod tests {
             Instruction::ByteAdd,             // Add the bytes
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
-
-        // Check the final state - we should have the sum of bytes on the stack
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::Bytes(result) = &eval.stack[0] {
-            assert_eq!(**result, [5]);
-        } else {
-            panic!("Expected a Bytes result on the stack");
-        }
+        run_test(&program, &[StackValue::Bytes(&&[5].as_slice())], |eval| {
+            // Check the final state - we should have the sum of bytes on the stack
+            assert_eq!(eval.stack.len(), 1);
+            if let StackValue::Bytes(result) = &eval.stack[0] {
+                assert_eq!(**result, [5]);
+            } else {
+                panic!("Expected a Bytes result on the stack");
+            }
+        });
     }
 
     #[test]
     fn test_run_program() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-
         // Create a program that:
         // 1. Pushes 10 onto the stack
         // 2. Pushes 20 onto the stack
@@ -473,27 +445,15 @@ mod tests {
             Instruction::Add,
         ];
 
-        // Create ZapEval with our program
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
+        let expected_stack = [StackValue::U64(35)];
 
-        // Run the entire program
-        eval.run();
-
-        // Check the final state - we should have 35 on the stack (30 + 5)
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::U64(result) = &eval.stack[0] {
-            assert_eq!(*result, 35);
-        } else {
-            panic!("Expected a U64 result on the stack");
-        }
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 
     #[test]
     pub fn op_branch() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-
         // Create a program with a branch
         let program = [
             Instruction::Branch(2),  // Branch to instruction 2
@@ -501,24 +461,15 @@ mod tests {
             Instruction::PushInt(2), // This should be executed
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
+        let expected_stack = [StackValue::U64(2)];
 
-        // Check the final state - we should have 2 on the stack
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::U64(result) = &eval.stack[0] {
-            assert_eq!(*result, 2);
-        } else {
-            panic!("Expected a U64 result on the stack");
-        }
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 
     #[test]
     pub fn get_element() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-
         // Create a program that:
         // 1. Initializes a Vec with capacity 2
         // 2. Pushes 42 into the Vec
@@ -533,24 +484,15 @@ mod tests {
             Instruction::GetElement,                 // Get element at index 0
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
+        let expected_stack = [StackValue::U64(42)];
 
-        // Check the final state - we should have 42 on the stack
-        assert_eq!(eval.stack.len(), 1);
-        if let StackValue::U64(result) = &eval.stack[0] {
-            assert_eq!(*result, 42);
-        } else {
-            panic!("Expected a U64 result on the stack");
-        }
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 
     #[test]
     pub fn nested_vec_mutation() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-
         let program = [
             // Create Vec
             Instruction::PushInt(2), // Push initial capacity for Vec
@@ -592,29 +534,25 @@ mod tests {
             Instruction::PushInt(1), // Push index 1 to get second element
             Instruction::GetElement, // Get element at index 1
         ];
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
 
-        assert_eq!(eval.stack.len(), 2);
-        assert_eq!(eval.stack[0], eval.stack[1]);
-        assert_eq!(eval.stack[0], StackValue::U64(33));
+        let expected_stack = [StackValue::U64(33), StackValue::U64(33)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 
     #[test]
     pub fn pop() {
-        let bump = Bump::new();
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-        
         let program = [
             Instruction::PushInt(42),  // Push a value onto stack
             Instruction::Pop,          // Pop it off
         ];
 
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
-        eval.run();
+        let expected_stack = [];
 
-        // Check that the stack is empty
-        assert!(eval.stack.is_empty(), "Stack should be empty after pop");
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
     }
 }
