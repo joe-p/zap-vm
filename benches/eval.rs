@@ -255,8 +255,23 @@ fn benchmark_op_ed25516_verify(c: &mut Criterion) {
     );
 }
 
+fn benchmark_op_pop(c: &mut Criterion) {
+    run_benchmark(
+        c,
+        "op_pop",
+        |eval| {
+            // Push an integer onto the stack
+            eval.op_push_int(black_box(42));
+        },
+        |eval| {
+            eval.op_pop();
+        },
+    );
+}
+
 criterion_group!(
     benches,
+    benchmark_op_pop,
     benchmark_op_ed25516_verify,
     benchmark_op_byte_sqrt_u512,
     benchmark_op_byte_add_u256,

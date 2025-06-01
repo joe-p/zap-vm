@@ -16,6 +16,7 @@ pub enum Instruction {
     Ed25519Verify,
     Branch(u16),
     GetElement,
+    Pop,
 }
 
 // Opcodes for instructions
@@ -33,6 +34,7 @@ pub mod opcodes {
     pub const ED25519_VERIFY: u8 = 0x0B;
     pub const BRANCH: u8 = 0x0C;
     pub const GET_ELEMENT: u8 = 0x0D;
+    pub const POP: u8 = 0x0E;
 }
 
 #[derive(Debug)]
@@ -124,6 +126,9 @@ impl Instruction {
                 }
                 opcodes::GET_ELEMENT => {
                     instructions.push(Instruction::GetElement);
+                }
+                opcodes::POP => {
+                    instructions.push(Instruction::Pop);
                 }
                 _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
             }

@@ -105,6 +105,7 @@ impl<'a> ZapEval<'a> {
             Instruction::Ed25519Verify => self.op_ed25519_verify(),
             Instruction::Branch(target) => self.op_branch(*target as usize),
             Instruction::GetElement => self.op_get_element(),
+            Instruction::Pop => self.op_pop(),
         }
     }
 
@@ -294,6 +295,10 @@ impl<'a> ZapEval<'a> {
         } else {
             panic!("Expected a Vec on the stack");
         }
+    }
+
+    pub fn op_pop(&mut self) {
+        self.stack.pop();
     }
 }
 
@@ -564,5 +569,18 @@ mod tests {
         assert_eq!(eval.stack.len(), 2);
         assert_eq!(eval.stack[0], eval.stack[1]);
         assert_eq!(eval.stack[0], StackValue::U64(33));
+    }
+
+    #[test]
+    pub fn pop() {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, EMPTY_PROGRAM);
+
+        eval.op_push_int(42);
+        eval.op_pop();
+
+        assert!(eval.stack.is_empty(), "Stack should be empty after pop");
     }
 }
