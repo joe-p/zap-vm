@@ -306,19 +306,37 @@ impl<'a> ZapEval<'a> {
 
 #[cfg(test)]
 mod tests {
+    extern crate stats_alloc;
+
+    use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
+    use std::alloc::System;
+
     use core::mem::ManuallyDrop;
 
     use super::*;
     use bumpalo::Bump;
+    #[global_allocator]
+    static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 
-    fn run_test(program: &[Instruction], expected_stack: &[StackValue], additional_assertions: impl FnOnce(&ZapEval)) {
-        let bump = Bump::new();
+    fn run_test(
+        program: &[Instruction],
+        expected_stack: &[StackValue],
+        additional_assertions: impl FnOnce(&ZapEval),
+    ) {
+        let bump = Bump::with_capacity(1_000);
+        bump.set_allocation_limit(Some(1_000));
+
         let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
         let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
 
         let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, program);
-        eval.run();
 
+        let region = Region::new(&GLOBAL);
+        eval.run();
+        let alloc_stats = region.change();
+
+        assert_eq!(alloc_stats.allocations, 0);
+        assert_eq!(alloc_stats.reallocations, 0);
         assert_eq!(eval.stack, expected_stack);
 
         additional_assertions(&eval);
@@ -333,10 +351,7 @@ mod tests {
     fn bytes_len() {
         // Create a program with PushBytes and BytesLen instructions
         let test_bytes = [1, 2, 3, 4].to_vec();
-        let program = [
-            Instruction::PushBytes(test_bytes),
-            Instruction::BytesLen,
-        ];
+        let program = [Instruction::PushBytes(test_bytes), Instruction::BytesLen];
 
         let expected_stack = [StackValue::U64(4)];
 
@@ -348,10 +363,10 @@ mod tests {
     #[test]
     fn vec_push() {
         let program = [
-            Instruction::PushInt(2),                  // Push initial capacity for Vec
-            Instruction::InitVecWithInitialCapacity,  // Initialize Vec with capacity 2
-            Instruction::PushInt(42),                 // Value to add to Vec
-            Instruction::PushVec,                     // Push the value onto the Vec
+            Instruction::PushInt(2),                 // Push initial capacity for Vec
+            Instruction::InitVecWithInitialCapacity, // Initialize Vec with capacity 2
+            Instruction::PushInt(42),                // Value to add to Vec
+            Instruction::PushVec,                    // Push the value onto the Vec
         ];
 
         run_test(&program, &[StackValue::Vec(VecHandle(0))], |eval| {
@@ -389,11 +404,11 @@ mod tests {
     #[test]
     fn reg_store_load() {
         let program = [
-            Instruction::PushInt(42),  // Push the value to store
-            Instruction::PushInt(0),   // Push register index
-            Instruction::RegStore,     // Store 42 in register 0
-            Instruction::PushInt(0),   // Push register index again
-            Instruction::RegLoad,      // Load value from register 0
+            Instruction::PushInt(42), // Push the value to store
+            Instruction::PushInt(0),  // Push register index
+            Instruction::RegStore,    // Store 42 in register 0
+            Instruction::PushInt(0),  // Push register index again
+            Instruction::RegLoad,     // Load value from register 0
         ];
 
         let expected_stack = [StackValue::U64(42)];
@@ -407,9 +422,9 @@ mod tests {
     pub fn byte_add() {
         // Create a program that tests byte addition
         let program = [
-            Instruction::PushBytes(vec![2]),  // Push first byte
-            Instruction::PushBytes(vec![3]),  // Push second byte
-            Instruction::ByteAdd,             // Add the bytes
+            Instruction::PushBytes(vec![2]), // Push first byte
+            Instruction::PushBytes(vec![3]), // Push second byte
+            Instruction::ByteAdd,            // Add the bytes
         ];
 
         run_test(&program, &[StackValue::Bytes(&&[5].as_slice())], |eval| {
@@ -545,8 +560,8 @@ mod tests {
     #[test]
     pub fn pop() {
         let program = [
-            Instruction::PushInt(42),  // Push a value onto stack
-            Instruction::Pop,          // Pop it off
+            Instruction::PushInt(42), // Push a value onto stack
+            Instruction::Pop,         // Pop it off
         ];
 
         let expected_stack = [];

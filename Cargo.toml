@@ -13,6 +13,7 @@ slotmap = { version = "1.0.7", default-features = false }
 criterion = "0.5"
 hex = "0.4.3"
 rand = "0.9.1"
+stats_alloc = "0.1.10"
 
 [[bench]]
 name = "eval"
