@@ -6,9 +6,13 @@ use crypto_bigint::CheckedAdd;
 
 use crate::{Instruction, ZAP_STACK_CAPACITY, trim_leading_zeros};
 
+#[repr(transparent)] // Guarantees same ABI as inner type
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VecHandle(u32);
+
 /// Represents a value that can be stored on the stack in the ZAP VM.
 /// The size of this enum is 24 bytes
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub enum StackValue<'a> {
     /// Unsigned 64-bit integer value.
     U64(u64),
@@ -17,7 +21,7 @@ pub enum StackValue<'a> {
     // because the array is larger in size on the stack
     Bytes(&'a [u8]),
     /// Vector of StackValues, allocated in the bump allocator.
-    Vec(u64),
+    Vec(VecHandle),
     #[default]
     Void,
 }
@@ -100,6 +104,7 @@ impl<'a> ZapEval<'a> {
             Instruction::ByteSqrt => self.op_byte_sqrt(),
             Instruction::Ed25519Verify => self.op_ed25519_verify(),
             Instruction::Branch(target) => self.op_branch(*target as usize),
+            Instruction::GetElement => self.op_get_element(),
         }
     }
 
@@ -154,7 +159,9 @@ impl<'a> ZapEval<'a> {
             panic!("Expected a U64 value for Vec capacity");
         };
 
-        let idx = self.vecs.len() as u64;
+        let idx = VecHandle {
+            0: self.vecs.len() as u32,
+        };
         let vec = BumpVec::with_capacity_in(capacity, self.bump);
         self.vecs.push(vec);
         self.push(StackValue::Vec(idx));
@@ -167,7 +174,7 @@ impl<'a> ZapEval<'a> {
         let vec = self.pop();
         match vec {
             Some(StackValue::Vec(v)) => {
-                self.vecs[v as usize].push(value);
+                self.vecs[v.0 as usize].push(value);
                 self.push(StackValue::Vec(v));
             }
             _ => panic!(
@@ -272,6 +279,22 @@ impl<'a> ZapEval<'a> {
             panic!("Expected Bytes for signature, message, and public key on the stack");
         }
     }
+
+    pub fn op_get_element(&mut self) {
+        if let Some(StackValue::U64(index)) = self.pop() {
+            if let Some(StackValue::Vec(vec_handle)) = self.pop() {
+                let vec = &self.vecs[vec_handle.0 as usize];
+                if index as usize >= vec.len() {
+                    panic!("Index out of bounds for Vec access");
+                }
+                self.push(vec[index as usize].clone());
+            } else {
+                panic!("Expected a U64 index on the stack");
+            }
+        } else {
+            panic!("Expected a Vec on the stack");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -320,7 +343,7 @@ mod tests {
         eval.op_push_vec();
 
         if let Some(StackValue::Vec(vec_idx)) = eval.pop() {
-            let vec = &eval.vecs[vec_idx as usize];
+            let vec = &eval.vecs[vec_idx.0 as usize];
             assert_eq!(vec.len(), 1);
             if let StackValue::U64(value) = vec[0] {
                 assert_eq!(value, 42);
@@ -454,5 +477,92 @@ mod tests {
         } else {
             panic!("Expected a U64 result on the stack");
         }
+    }
+
+    #[test]
+    pub fn get_element() {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+
+        // Create a program that:
+        // 1. Initializes a Vec with capacity 2
+        // 2. Pushes 42 into the Vec
+        // 3. Pushes 0 onto the stack to get the first element
+        // 4. Gets the element at index 0 from the Vec
+        let program = [
+            Instruction::PushInt(2),                 // Initial capacity for Vec
+            Instruction::InitVecWithInitialCapacity, // Initialize Vec with capacity 2
+            Instruction::PushInt(42),                // Value to add to Vec
+            Instruction::PushVec,                    // Push the Vec onto the stack
+            Instruction::PushInt(0),                 // Index to get from Vec
+            Instruction::GetElement,                 // Get element at index 0
+        ];
+
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
+        eval.run();
+
+        // Check the final state - we should have 42 on the stack
+        assert_eq!(eval.stack.len(), 1);
+        if let StackValue::U64(result) = &eval.stack[0] {
+            assert_eq!(*result, 42);
+        } else {
+            panic!("Expected a U64 result on the stack");
+        }
+    }
+
+    #[test]
+    pub fn nested_vec_mutation() {
+        let bump = Bump::new();
+        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
+        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
+
+        let program = [
+            // Create Vec
+            Instruction::PushInt(2), // Push initial capacity for Vec
+            Instruction::InitVecWithInitialCapacity, // Initialize Vec with capacity 2
+            Instruction::PushInt(11), // Push value to add to Vec
+            Instruction::PushVec,    // Push the Vec onto the stack
+            // Store vec in register 0
+            Instruction::PushInt(0), // Push register index 0
+            Instruction::RegStore,   // Store the Vec in register 0
+            // Now create a new Vec that will reference the first Vec
+            Instruction::PushInt(2), // Push initial capacity for new Vec
+            Instruction::InitVecWithInitialCapacity, // Initialize new Vec with capacity 2
+            // Push the first Vec onto the stack
+            Instruction::PushInt(0), // Push register index 0
+            Instruction::RegLoad,    // Load the Vec from register 0
+            // Push the first Vec onto the stack again to add another value
+            Instruction::PushVec,     // Push the Vec again to add another value
+            Instruction::PushInt(22), // Push value to add to new Vec
+            Instruction::PushVec,     // Push the new Vec onto the stack
+            // Store new Vec in register 1
+            Instruction::PushInt(1), // Push register index 1
+            Instruction::RegStore,   // Store the new Vec in register 1
+            // Load the first vec from register 0
+            Instruction::PushInt(0), // Push register index 0
+            Instruction::RegLoad,    // Load the Vec from register 0
+            // Push new value to add to the first Vec
+            Instruction::PushInt(33), // Push value to add to first Vec
+            Instruction::PushVec,     // Push the first Vec onto the stack
+            // Get second element
+            Instruction::PushInt(1), // Push index 1 to get second element
+            Instruction::GetElement, // Get element at index 1
+            // Now load the vec from register 1
+            Instruction::PushInt(1), // Push register index 1
+            Instruction::RegLoad,    // Load the Vec from register 1
+            // And then get the first element
+            Instruction::PushInt(0), // Push index 0 to get first element
+            Instruction::GetElement, // Get element at index 0
+            // Then get the second element
+            Instruction::PushInt(1), // Push index 1 to get second element
+            Instruction::GetElement, // Get element at index 1
+        ];
+        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, &program);
+        eval.run();
+
+        assert_eq!(eval.stack.len(), 2);
+        assert_eq!(eval.stack[0], eval.stack[1]);
+        assert_eq!(eval.stack[0], StackValue::U64(33));
     }
 }

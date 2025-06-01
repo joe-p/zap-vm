@@ -15,6 +15,7 @@ pub enum Instruction {
     ByteSqrt,
     Ed25519Verify,
     Branch(u16),
+    GetElement,
 }
 
 // Opcodes for instructions
@@ -31,6 +32,7 @@ pub mod opcodes {
     pub const BYTE_SQRT: u8 = 0x0A;
     pub const ED25519_VERIFY: u8 = 0x0B;
     pub const BRANCH: u8 = 0x0C;
+    pub const GET_ELEMENT: u8 = 0x0D;
 }
 
 #[derive(Debug)]
@@ -119,6 +121,9 @@ impl Instruction {
 
                     instructions.push(Instruction::Branch(branch));
                     index += 2;
+                }
+                opcodes::GET_ELEMENT => {
+                    instructions.push(Instruction::GetElement);
                 }
                 _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
             }
