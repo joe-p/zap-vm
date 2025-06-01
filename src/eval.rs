@@ -17,9 +17,9 @@ pub enum StackValue<'a> {
     /// Unsigned 64-bit integer value.
     U64(u64),
     /// Byte array allocated in the bump allocator.
-    // NOTE: There is a small performance penalty for using arrays over vecs here. Presumably
-    // because the array is larger in size on the stack
-    Bytes(&'a [u8]),
+    /// This is a double reference so we can have a thinner pointer in
+    /// the enum thus reducing the size of the enum from 24 bytes to 16 bytes.
+    Bytes(&'a &'a [u8]),
     /// Vector of StackValues, allocated in the bump allocator.
     Vec(VecHandle),
     #[default]
@@ -132,7 +132,9 @@ impl<'a> ZapEval<'a> {
     }
 
     pub fn op_push_bytes(&mut self, bytes: &'a [u8]) {
-        self.push(StackValue::Bytes(bytes));
+        // Store the bytes reference in the bump allocator and then store a reference to that
+        let bytes_ref = self.bump.alloc(bytes);
+        self.push(StackValue::Bytes(bytes_ref));
     }
 
     pub fn op_bytes_len(&mut self) {
@@ -218,18 +220,18 @@ impl<'a> ZapEval<'a> {
 
             if left.len() < 64 {
                 let mut padded_left = [0u8; 64];
-                padded_left[64 - left.len()..].copy_from_slice(left);
+                padded_left[64 - left.len()..].copy_from_slice(*left);
                 left_num = crypto_bigint::U512::from_be_slice(&padded_left);
             } else {
-                left_num = crypto_bigint::U512::from_be_slice(left);
+                left_num = crypto_bigint::U512::from_be_slice(*left);
             }
 
             if right.len() < 64 {
                 let mut padded_right = [0u8; 64];
-                padded_right[64 - right.len()..].copy_from_slice(right);
+                padded_right[64 - right.len()..].copy_from_slice(*right);
                 right_num = crypto_bigint::U512::from_be_slice(&padded_right);
             } else {
-                right_num = crypto_bigint::U512::from_be_slice(right);
+                right_num = crypto_bigint::U512::from_be_slice(*right);
             }
 
             let result = left_num
@@ -237,8 +239,8 @@ impl<'a> ZapEval<'a> {
                 .expect("Byte addition overflow");
 
             let result_bytes = self.bump.alloc(result.to_be_bytes());
-
-            self.push(StackValue::Bytes(trim_leading_zeros(result_bytes)));
+            let bytes_ref = self.bump.alloc(trim_leading_zeros(result_bytes));
+            self.push(StackValue::Bytes(bytes_ref));
         } else {
             panic!("Invalid stack state for byte addition");
         }
@@ -249,17 +251,17 @@ impl<'a> ZapEval<'a> {
             let num: crypto_bigint::U512;
             if bytes.len() < 64 {
                 let mut padded_bytes = [0u8; 64];
-                padded_bytes[64 - bytes.len()..].copy_from_slice(bytes);
+                padded_bytes[64 - bytes.len()..].copy_from_slice(*bytes);
                 num = crypto_bigint::U512::from_be_slice(&padded_bytes);
             } else {
-                num = crypto_bigint::U512::from_be_slice(bytes);
+                num = crypto_bigint::U512::from_be_slice(*bytes);
             }
 
             let result = num.sqrt();
 
             let result_bytes = self.bump.alloc(result.to_be_bytes());
-
-            self.push(StackValue::Bytes(trim_leading_zeros(result_bytes)));
+            let bytes_ref = self.bump.alloc(trim_leading_zeros(result_bytes));
+            self.push(StackValue::Bytes(bytes_ref));
         } else {
             panic!("Expected Bytes on the stack for square root operation");
         }
@@ -272,9 +274,9 @@ impl<'a> ZapEval<'a> {
             Some(StackValue::Bytes(message)),
         ) = (self.pop(), self.pop(), self.pop())
         {
-            let public_key = ed25519_dalek::VerifyingKey::try_from(public_key).unwrap();
-            let signature = ed25519_dalek::Signature::try_from(signature).unwrap();
-            let is_valid = public_key.verify_strict(message, &signature).is_ok();
+            let public_key = ed25519_dalek::VerifyingKey::try_from(*public_key).unwrap();
+            let signature = ed25519_dalek::Signature::try_from(*signature).unwrap();
+            let is_valid = public_key.verify_strict(*message, &signature).is_ok();
             self.push(StackValue::U64(if is_valid { 1 } else { 0 }));
         } else {
             panic!("Expected Bytes for signature, message, and public key on the stack");
@@ -311,7 +313,7 @@ mod tests {
 
     #[test]
     fn stack_value_size() {
-        assert_eq!(core::mem::size_of::<StackValue>(), 24);
+        assert_eq!(core::mem::size_of::<StackValue>(), 16);
     }
 
     const EMPTY_PROGRAM: &[Instruction] = &[];
@@ -412,7 +414,7 @@ mod tests {
         eval.op_byte_add();
 
         if let Some(StackValue::Bytes(result)) = eval.pop() {
-            assert_eq!(result, bump.alloc([5]));
+            assert_eq!(*result, [5]);
         } else {
             panic!("Expected a Bytes result on the stack");
         }
