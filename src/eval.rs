@@ -257,7 +257,7 @@ impl<'a> ZapEval<'a> {
                 num = crypto_bigint::U512::from_be_slice(*bytes);
             }
 
-            let result = num.sqrt();
+            let result = num.sqrt_vartime();
 
             let result_bytes = self.bump.alloc(result.to_be_bytes());
             let bytes_ref = self.bump.alloc(trim_leading_zeros(result_bytes));
