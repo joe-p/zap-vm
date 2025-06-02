@@ -9,8 +9,8 @@ pub enum Instruction {
     Add,
     InitVecWithInitialCapacity,
     PushVec,
-    RegStore,
-    RegLoad,
+    ScratchStore,
+    ScratchLoad,
     ByteAdd,
     ByteSqrt,
     Ed25519Verify,
@@ -27,8 +27,8 @@ pub mod opcodes {
     pub const ADD: u8 = 0x04;
     pub const INIT_VEC_WITH_INITIAL_CAPACITY: u8 = 0x05;
     pub const PUSH_VEC: u8 = 0x06;
-    pub const REG_STORE: u8 = 0x07;
-    pub const REG_LOAD: u8 = 0x08;
+    pub const SCRATCH_STORE: u8 = 0x07;
+    pub const SCRATCH_LOAD: u8 = 0x08;
     pub const BYTE_ADD: u8 = 0x09;
     pub const BYTE_SQRT: u8 = 0x0A;
     pub const ED25519_VERIFY: u8 = 0x0B;
@@ -97,11 +97,11 @@ impl Instruction {
                 opcodes::PUSH_VEC => {
                     instructions.push(Instruction::PushVec);
                 }
-                opcodes::REG_STORE => {
-                    instructions.push(Instruction::RegStore);
+                opcodes::SCRATCH_STORE => {
+                    instructions.push(Instruction::ScratchStore);
                 }
-                opcodes::REG_LOAD => {
-                    instructions.push(Instruction::RegLoad);
+                opcodes::SCRATCH_LOAD => {
+                    instructions.push(Instruction::ScratchLoad);
                 }
                 opcodes::BYTE_ADD => {
                     instructions.push(Instruction::ByteAdd);

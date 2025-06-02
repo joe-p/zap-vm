@@ -135,23 +135,23 @@ fn benchmark_alternating_vecs_over_capacity(c: &mut Criterion) {
             eval.op_push_int(1);
             eval.op_init_vec_with_initial_capacity();
             eval.op_push_int(2);
-            eval.op_reg_store(); // Store in reg 2
+            eval.op_scratch_store(); // Store in scratch 2
 
             eval.op_push_int(1);
             eval.op_init_vec_with_initial_capacity();
             eval.op_push_int(3);
-            eval.op_reg_store(); // Store in reg 3
+            eval.op_scratch_store(); // Store in scratch 3
         },
         |eval| {
             // Push 10 items
             for i in 0..11 {
                 eval.op_push_int(2);
-                eval.op_reg_load();
+                eval.op_scratch_load();
                 eval.op_push_int(black_box(i + 10));
                 eval.op_push_vec();
 
                 eval.op_push_int(3);
-                eval.op_reg_load();
+                eval.op_scratch_load();
                 eval.op_push_int(black_box(i + 10));
                 eval.op_push_vec();
             }

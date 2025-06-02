@@ -28,13 +28,19 @@ pub enum StackValue<'a> {
 
 pub struct ZapEval<'a> {
     /// The stack used for evaluation, which can hold a variety of StackValue types.
-    /// The stack is NOT allocated in the bump allocator but is initialized with a capacity
+    /// The stack is NOT allocated in the bump allocator but should be initialized with a capacity
     /// that will never be exceeded.
     pub stack: &'a mut Vec<StackValue<'a>>,
+    /// The bump allocator used for allocating memory for StackValue::Bytes and StackValue::Vec
     bump: &'a bumpalo::Bump,
+    /// A vector of bump-allocated vectors. This vector only stores the handles. The actual data is
+    /// allocated in the bump allocator. Should be allocated with a capcity that will never be exceeded.
     pub vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
-    pub registers: [StackValue<'a>; 256],
+    /// Scratch slots used for storing StackValues accessible throughout the entire program.
+    pub scratch_slots: [StackValue<'a>; 256],
+    /// The program being executed, which is a sequence of instructions.
     program: &'a [Instruction],
+    /// The current position in the program being executed. May go backwards with branching instructions.
     program_counter: usize,
 }
 
@@ -67,13 +73,13 @@ impl<'a> ZapEval<'a> {
             );
         }
 
-        let registers = [const { StackValue::Void }; 256];
+        let scratch_slots = [const { StackValue::Void }; 256];
 
         ZapEval {
             stack,
             bump,
             vecs,
-            registers,
+            scratch_slots: scratch_slots,
             program,
             program_counter: 0,
         }
@@ -98,8 +104,8 @@ impl<'a> ZapEval<'a> {
             Instruction::Add => self.op_add(),
             Instruction::InitVecWithInitialCapacity => self.op_init_vec_with_initial_capacity(),
             Instruction::PushVec => self.op_push_vec(),
-            Instruction::RegStore => self.op_reg_store(),
-            Instruction::RegLoad => self.op_reg_load(),
+            Instruction::ScratchStore => self.op_scratch_store(),
+            Instruction::ScratchLoad => self.op_scratch_load(),
             Instruction::ByteAdd => self.op_byte_add(),
             Instruction::ByteSqrt => self.op_byte_sqrt(),
             Instruction::Ed25519Verify => self.op_ed25519_verify(),
@@ -188,26 +194,24 @@ impl<'a> ZapEval<'a> {
     }
 
     /// Store the value on the top of the stack
-    /// [value, reg_idx] -> []
-    pub fn op_reg_store(&mut self) {
+    /// [value, scratch_slot] -> []
+    pub fn op_scratch_store(&mut self) {
         match self.pop() {
-            Some(StackValue::U64(reg_idx)) if reg_idx < 256 => {
-                let value = self
-                    .pop()
-                    .expect("Expected a value to store in the register");
-                self.registers[reg_idx as usize] = value;
+            Some(StackValue::U64(scratch_slot)) if scratch_slot < 256 => {
+                let value = self.pop().expect("Expected a value to store in the slot");
+                self.scratch_slots[scratch_slot as usize] = value;
             }
-            _ => panic!("Expected a U64 register index on the stack"),
+            _ => panic!("Expected a U64 scratch slot index on the stack"),
         }
     }
 
-    pub fn op_reg_load(&mut self) {
+    pub fn op_scratch_load(&mut self) {
         match self.pop() {
-            Some(StackValue::U64(reg_idx)) if reg_idx < 256 => {
-                let value = self.registers[reg_idx as usize].clone();
+            Some(StackValue::U64(scratch_idx)) if scratch_idx < 256 => {
+                let value = self.scratch_slots[scratch_idx as usize].clone();
                 self.push(value);
             }
-            _ => panic!("Expected a U64 register index on the stack"),
+            _ => panic!("Expected a U64 scratch slot index on the stack"),
         }
     }
 
@@ -402,13 +406,13 @@ mod tests {
     }
 
     #[test]
-    fn reg_store_load() {
+    fn scratch_store_load() {
         let program = [
-            Instruction::PushInt(42), // Push the value to store
-            Instruction::PushInt(0),  // Push register index
-            Instruction::RegStore,    // Store 42 in register 0
-            Instruction::PushInt(0),  // Push register index again
-            Instruction::RegLoad,     // Load value from register 0
+            Instruction::PushInt(42),  // Push the value to store
+            Instruction::PushInt(0),   // Push scratch index
+            Instruction::ScratchStore, // Store 42 in scratch slot 0
+            Instruction::PushInt(0),   // Push scratch slot index again
+            Instruction::ScratchLoad,  // Load value from scratch slot 0
         ];
 
         let expected_stack = [StackValue::U64(42)];
@@ -444,19 +448,19 @@ mod tests {
         // 1. Pushes 10 onto the stack
         // 2. Pushes 20 onto the stack
         // 3. Adds the two numbers
-        // 4. Stores the result in register 0
+        // 4. Stores the result in scratch slot 0
         // 5. Pushes 5 onto the stack
-        // 6. Loads the value from register 0
+        // 6. Loads the value from scratch slot 0
         // 7. Adds the two numbers
         let program = [
             Instruction::PushInt(10),
             Instruction::PushInt(20),
             Instruction::Add,
             Instruction::PushInt(0),
-            Instruction::RegStore,
+            Instruction::ScratchStore,
             Instruction::PushInt(5),
             Instruction::PushInt(0),
-            Instruction::RegLoad,
+            Instruction::ScratchLoad,
             Instruction::Add,
         ];
 
@@ -514,34 +518,34 @@ mod tests {
             Instruction::InitVecWithInitialCapacity, // Initialize Vec with capacity 2
             Instruction::PushInt(11), // Push value to add to Vec
             Instruction::PushVec,    // Push the Vec onto the stack
-            // Store vec in register 0
-            Instruction::PushInt(0), // Push register index 0
-            Instruction::RegStore,   // Store the Vec in register 0
+            // Store vec in scratch slot 0
+            Instruction::PushInt(0),   // Push scratch slot index 0
+            Instruction::ScratchStore, // Store the Vec in scratch slot 0
             // Now create a new Vec that will reference the first Vec
             Instruction::PushInt(2), // Push initial capacity for new Vec
             Instruction::InitVecWithInitialCapacity, // Initialize new Vec with capacity 2
             // Push the first Vec onto the stack
-            Instruction::PushInt(0), // Push register index 0
-            Instruction::RegLoad,    // Load the Vec from register 0
+            Instruction::PushInt(0),  // Push scratch slot index 0
+            Instruction::ScratchLoad, // Load the Vec from scratch slot 0
             // Push the first Vec onto the stack again to add another value
             Instruction::PushVec,     // Push the Vec again to add another value
             Instruction::PushInt(22), // Push value to add to new Vec
             Instruction::PushVec,     // Push the new Vec onto the stack
-            // Store new Vec in register 1
-            Instruction::PushInt(1), // Push register index 1
-            Instruction::RegStore,   // Store the new Vec in register 1
-            // Load the first vec from register 0
-            Instruction::PushInt(0), // Push register index 0
-            Instruction::RegLoad,    // Load the Vec from register 0
+            // Store new Vec in scratch slot 1
+            Instruction::PushInt(1),   // Push scratch slot index 1
+            Instruction::ScratchStore, // Store the new Vec in scratch slot 1
+            // Load the first vec from scratch slot 0
+            Instruction::PushInt(0),  // Push scratch slot index 0
+            Instruction::ScratchLoad, // Load the Vec from scratch slot 0
             // Push new value to add to the first Vec
             Instruction::PushInt(33), // Push value to add to first Vec
             Instruction::PushVec,     // Push the first Vec onto the stack
             // Get second element
             Instruction::PushInt(1), // Push index 1 to get second element
             Instruction::GetElement, // Get element at index 1
-            // Now load the vec from register 1
-            Instruction::PushInt(1), // Push register index 1
-            Instruction::RegLoad,    // Load the Vec from register 1
+            // Now load the vec from scratch slot 1
+            Instruction::PushInt(1),  // Push scratch slot index 1
+            Instruction::ScratchLoad, // Load the Vec from scratch slot 1
             // And then get the first element
             Instruction::PushInt(0), // Push index 0 to get first element
             Instruction::GetElement, // Get element at index 0
