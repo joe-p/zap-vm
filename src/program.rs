@@ -4,9 +4,9 @@ use alloc::vec::Vec;
 use bumpalo::Bump;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Instruction<'block_arena> {
+pub enum Instruction<'sequence_arena> {
     PushInt(u64),
-    PushBytes(&'block_arena [u8]),
+    PushBytes(&'sequence_arena [u8]),
     BytesLen,
     Add,
     InitVecWithInitialCapacity,
@@ -46,12 +46,12 @@ pub enum InstructionParseError {
     InvalidDataLength,
 }
 
-impl<'block_arena> Instruction<'block_arena> {
+impl<'sequence_arena> Instruction<'sequence_arena> {
     /// Converts a byte array to a sequence of instructions
     pub fn from_bytes(
-        bytes: &'block_arena [u8],
-        block_arena: &'block_arena Bump,
-    ) -> Result<Vec<Instruction<'block_arena>>, InstructionParseError> {
+        bytes: &'sequence_arena [u8],
+        sequence_arena: &'sequence_arena Bump,
+    ) -> Result<Vec<Instruction<'sequence_arena>>, InstructionParseError> {
         let mut instructions = Vec::new();
         let mut index = 0;
 
@@ -86,7 +86,7 @@ impl<'block_arena> Instruction<'block_arena> {
                         return Err(InstructionParseError::UnexpectedEndOfBytes);
                     }
 
-                    let data = block_arena.alloc(&bytes[index..index + len]);
+                    let data = sequence_arena.alloc(&bytes[index..index + len]);
                     instructions.push(Instruction::PushBytes(data));
                     index += len;
                 }
@@ -164,9 +164,9 @@ mod tests {
         // ADD
         bytecode.push(ADD);
 
-        let block_arena = Bump::new();
+        let sequence_arena = Bump::new();
 
-        let result = Instruction::from_bytes(&bytecode, &block_arena).unwrap();
+        let result = Instruction::from_bytes(&bytecode, &sequence_arena).unwrap();
         assert_eq!(result.len(), 3);
 
         match &result[0] {
@@ -192,9 +192,9 @@ mod tests {
     fn parse_instructions_invalid_opcode() {
         let bytecode = vec![0xFF]; // Invalid opcode
 
-        let block_arena = Bump::new();
+        let sequence_arena = Bump::new();
 
-        match Instruction::from_bytes(&bytecode, &block_arena) {
+        match Instruction::from_bytes(&bytecode, &sequence_arena) {
             Err(InstructionParseError::InvalidOpcode(opcode)) => assert_eq!(opcode, 0xFF),
             _ => panic!("Expected InvalidOpcode error"),
         }
@@ -205,8 +205,8 @@ mod tests {
         // PUSH_INT without enough bytes for the value
         let bytecode = vec![PUSH_INT, 0x01, 0x02]; // Missing 6 bytes
 
-        let block_arena = Bump::new();
-        match Instruction::from_bytes(&bytecode, &block_arena) {
+        let sequence_arena = Bump::new();
+        match Instruction::from_bytes(&bytecode, &sequence_arena) {
             Err(InstructionParseError::UnexpectedEndOfBytes) => {}
             _ => panic!("Expected UnexpectedEndOfBytes error"),
         }

@@ -4,9 +4,9 @@ use bumpalo::Bump;
 
 use crate::Instruction;
 
-pub fn eval_block(
+pub fn eval_sequence(
     programs_bytecode: &[&[u8]],
-    block_arena: &mut Bump,
+    sequence_arena: &mut Bump,
     eval_arena: &mut Bump,
 ) -> Result<(), String> {
     let mut program_map = HashMap::<&[u8], &[Instruction]>::new();
@@ -16,10 +16,10 @@ pub fn eval_block(
             continue; // Skip if already parsed
         }
 
-        let instructions = Instruction::from_bytes(bytecode, &block_arena)
+        let instructions = Instruction::from_bytes(bytecode, &sequence_arena)
             .map_err(|_| format!("Failed to parse bytecode"))?;
 
-        let instructions = block_arena.alloc(instructions);
+        let instructions = sequence_arena.alloc(instructions);
 
         program_map.insert(bytecode, instructions);
     }
@@ -42,7 +42,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_eval_block() {
+    fn test_eval_sequence() {
         let mut bytecode = Vec::new();
 
         // PUSH_BYTES "hello"
@@ -72,13 +72,13 @@ mod tests {
         let programs_bytecode = programs_bytecode.as_slice();
 
         let mut eval_arena = Bump::with_capacity(1_000_000);
-        let mut block_arena = Bump::with_capacity(1_000_000);
+        let mut sequence_arena = Bump::with_capacity(1_000_000);
 
         let region = Region::new(&GLOBAL);
-        let result = eval_block(&programs_bytecode, &mut block_arena, &mut eval_arena);
+        let result = eval_sequence(&programs_bytecode, &mut sequence_arena, &mut eval_arena);
         let alloc_stats = region.change();
 
-        assert!(result.is_ok(), "Expected eval_block to succeed");
+        assert!(result.is_ok(), "Expected eval_sequence to succeed");
 
         // Two allocations:
         // 1. program_map

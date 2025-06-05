@@ -2,9 +2,9 @@
 
 extern crate alloc;
 
-pub mod block;
 pub mod eval;
 pub mod program;
+pub mod sequence;
 
 pub use eval::{StackValue, ZapEval};
 pub use program::{Instruction, InstructionParseError, opcodes};
