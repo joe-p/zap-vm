@@ -2,7 +2,7 @@ extern crate alloc;
 
 use core::mem;
 
-use bumpalo::collections::Vec as BumpVec;
+use bumpalo::collections::Vec as ArenaVec;
 use crypto_bigint::CheckedAdd;
 
 use crate::{Instruction, ZAP_STACK_CAPACITY, trim_leading_zeros};
@@ -17,11 +17,11 @@ pub struct VecHandle(u32);
 pub enum StackValue<'eval_arena> {
     /// Unsigned 64-bit integer value.
     U64(u64),
-    /// Byte array allocated in the bump allocator.
+    /// Byte array allocated in the arena.
     /// This is a double reference so we can have a thinner pointer in
     /// the enum thus reducing the size of the enum from 24 bytes to 16 bytes.
     Bytes(&'eval_arena &'eval_arena [u8]),
-    /// Vector of StackValues, allocated in the bump allocator.
+    /// Vector of StackValues, allocated in the arena.
     Vec(VecHandle),
     #[default]
     Void,
@@ -29,14 +29,12 @@ pub enum StackValue<'eval_arena> {
 
 pub struct ZapEval<'eval_arena> {
     /// The stack used for evaluation, which can hold a variety of StackValue types.
-    /// The stack is NOT allocated in the bump allocator but should be initialized with a capacity
-    /// that will never be exceeded.
-    pub stack: &'eval_arena mut BumpVec<'eval_arena, StackValue<'eval_arena>>,
-    /// The bump allocator used for allocating memory for StackValue::Bytes and StackValue::Vec
-    bump: &'eval_arena bumpalo::Bump,
-    /// A vector of bump-allocated vectors. This vector only stores the handles. The actual data is
-    /// allocated in the bump allocator. Should be allocated with a capcity that will never be exceeded.
-    pub vecs: &'eval_arena mut BumpVec<'eval_arena, BumpVec<'eval_arena, StackValue<'eval_arena>>>,
+    pub stack: &'eval_arena mut ArenaVec<'eval_arena, StackValue<'eval_arena>>,
+    /// The arena used for allocating memory for the stack, scratch, StackValue::Bytes and StackValue::Vec
+    arena: &'eval_arena bumpalo::Bump,
+    /// An arena-allocated vector of arena-allocated vectors.
+    pub vecs:
+        &'eval_arena mut ArenaVec<'eval_arena, ArenaVec<'eval_arena, StackValue<'eval_arena>>>,
     /// Scratch slots used for storing StackValues accessible throughout the entire program.
     pub scratch_slots: &'eval_arena mut [StackValue<'eval_arena>],
     /// The program being executed, which is a sequence of instructions.
@@ -47,9 +45,9 @@ pub struct ZapEval<'eval_arena> {
 
 impl<'eval_arena> ZapEval<'eval_arena> {
     /// Creates a new ZapEval instance with a mutable reference to a stack and a bump allocator.
-    /// Both the stack and the bump allocator are expected to be cleared/reset before use
-    pub fn new(bump: &'eval_arena bumpalo::Bump, program: &'eval_arena [Instruction]) -> Self {
-        let used_capacity = bump.allocated_bytes() - bump.chunk_capacity();
+    /// The arena must be reset before each new evaluation to ensure no leftover data from previous evaluations.
+    pub fn new(arena: &'eval_arena bumpalo::Bump, program: &'eval_arena [Instruction]) -> Self {
+        let used_capacity = arena.allocated_bytes() - arena.chunk_capacity();
 
         // We need to also check against 6*word size after resets until this PR is merged:
         // https://github.com/fitzgen/bumpalo/pull/275
@@ -57,18 +55,18 @@ impl<'eval_arena> ZapEval<'eval_arena> {
             panic!("Bump allocator must be reset before creating ZapEval",);
         }
 
-        let scratch_slots = bump.alloc_slice_fill_default(256);
+        let scratch_slots = arena.alloc_slice_fill_default(256);
 
-        let stack_vec = BumpVec::with_capacity_in(ZAP_STACK_CAPACITY, bump);
-        let stack = bump.alloc(stack_vec);
+        let stack_vec = ArenaVec::with_capacity_in(ZAP_STACK_CAPACITY, arena);
+        let stack = arena.alloc(stack_vec);
         stack.clear();
 
-        let vecs_vec = BumpVec::with_capacity_in(256, bump);
-        let vecs = bump.alloc(vecs_vec);
+        let vecs_vec = ArenaVec::with_capacity_in(256, arena);
+        let vecs = arena.alloc(vecs_vec);
 
         ZapEval {
             stack,
-            bump,
+            arena,
             vecs,
             scratch_slots: scratch_slots,
             program,
@@ -129,8 +127,8 @@ impl<'eval_arena> ZapEval<'eval_arena> {
     }
 
     pub fn op_push_bytes(&mut self, bytes: &'eval_arena [u8]) {
-        // Store the bytes reference in the bump allocator and then store a reference to that
-        let bytes_ref = self.bump.alloc(bytes);
+        // Store the bytes reference in the arena and then store a reference to that
+        let bytes_ref = self.arena.alloc(bytes);
         self.push(StackValue::Bytes(bytes_ref));
     }
 
@@ -162,7 +160,7 @@ impl<'eval_arena> ZapEval<'eval_arena> {
         let idx = VecHandle {
             0: self.vecs.len() as u32,
         };
-        let vec = BumpVec::with_capacity_in(capacity, self.bump);
+        let vec = ArenaVec::with_capacity_in(capacity, self.arena);
         self.vecs.push(vec);
         self.push(StackValue::Vec(idx));
     }
@@ -233,8 +231,8 @@ impl<'eval_arena> ZapEval<'eval_arena> {
                 .checked_add(&right_num)
                 .expect("Byte addition overflow");
 
-            let result_bytes = self.bump.alloc(result.to_be_bytes());
-            let bytes_ref = self.bump.alloc(trim_leading_zeros(result_bytes));
+            let result_bytes = self.arena.alloc(result.to_be_bytes());
+            let bytes_ref = self.arena.alloc(trim_leading_zeros(result_bytes));
             self.push(StackValue::Bytes(bytes_ref));
         } else {
             panic!("Invalid stack state for byte addition");
@@ -254,8 +252,8 @@ impl<'eval_arena> ZapEval<'eval_arena> {
 
             let result = num.sqrt_vartime();
 
-            let result_bytes = self.bump.alloc(result.to_be_bytes());
-            let bytes_ref = self.bump.alloc(trim_leading_zeros(result_bytes));
+            let result_bytes = self.arena.alloc(result.to_be_bytes());
+            let bytes_ref = self.arena.alloc(trim_leading_zeros(result_bytes));
             self.push(StackValue::Bytes(bytes_ref));
         } else {
             panic!("Expected Bytes on the stack for square root operation");
