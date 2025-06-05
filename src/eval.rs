@@ -1,6 +1,7 @@
 extern crate alloc;
 
-use alloc::vec::Vec;
+use core::mem;
+
 use bumpalo::collections::Vec as BumpVec;
 use crypto_bigint::CheckedAdd;
 
@@ -30,14 +31,14 @@ pub struct ZapEval<'a> {
     /// The stack used for evaluation, which can hold a variety of StackValue types.
     /// The stack is NOT allocated in the bump allocator but should be initialized with a capacity
     /// that will never be exceeded.
-    pub stack: &'a mut Vec<StackValue<'a>>,
+    pub stack: &'a mut BumpVec<'a, StackValue<'a>>,
     /// The bump allocator used for allocating memory for StackValue::Bytes and StackValue::Vec
     bump: &'a bumpalo::Bump,
     /// A vector of bump-allocated vectors. This vector only stores the handles. The actual data is
     /// allocated in the bump allocator. Should be allocated with a capcity that will never be exceeded.
-    pub vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
+    pub vecs: &'a mut BumpVec<'a, BumpVec<'a, StackValue<'a>>>,
     /// Scratch slots used for storing StackValues accessible throughout the entire program.
-    pub scratch_slots: [StackValue<'a>; 256],
+    pub scratch_slots: &'a mut [StackValue<'a>],
     /// The program being executed, which is a sequence of instructions.
     program: &'a [Instruction],
     /// The current position in the program being executed. May go backwards with branching instructions.
@@ -47,33 +48,23 @@ pub struct ZapEval<'a> {
 impl<'a> ZapEval<'a> {
     /// Creates a new ZapEval instance with a mutable reference to a stack and a bump allocator.
     /// Both the stack and the bump allocator are expected to be cleared/reset before use
-    pub fn new(
-        stack: &'a mut Vec<StackValue<'a>>,
-        bump: &'a bumpalo::Bump,
-        vecs: &'a mut Vec<BumpVec<'a, StackValue<'a>>>,
-        program: &'a [Instruction],
-    ) -> Self {
-        if !stack.is_empty() {
-            panic!("Stack must be empty before creating ZapEval");
+    pub fn new(bump: &'a bumpalo::Bump, program: &'a [Instruction]) -> Self {
+        let used_capacity = bump.allocated_bytes() - bump.chunk_capacity();
+
+        // We need to also check against 6*word size after resets until this PR is merged:
+        // https://github.com/fitzgen/bumpalo/pull/275
+        if used_capacity != 0 && used_capacity != 6 * mem::size_of::<usize>() {
+            panic!("Bump allocator must be reset before creating ZapEval",);
         }
 
-        if stack.capacity() < ZAP_STACK_CAPACITY {
-            panic!(
-                "Stack capacity must be at least ZAP_STACK_CAPACITY. Current capacity: {}. ZAP_STACK_CAPACITY: {}",
-                stack.capacity(),
-                ZAP_STACK_CAPACITY
-            );
-        }
+        let scratch_slots = bump.alloc_slice_fill_default(256);
 
-        #[cfg(not(test))]
-        if bump.allocated_bytes() != bump.chunk_capacity() {
-            panic!(
-                "Bump allocator must be empty before creating ZapEval, but it has {} bytes allocated",
-                bump.allocated_bytes() - bump.chunk_capacity()
-            );
-        }
+        let stack_vec = BumpVec::with_capacity_in(ZAP_STACK_CAPACITY, bump);
+        let stack = bump.alloc(stack_vec);
+        stack.clear();
 
-        let scratch_slots = [const { StackValue::Void }; 256];
+        let vecs_vec = BumpVec::with_capacity_in(256, bump);
+        let vecs = bump.alloc(vecs_vec);
 
         ZapEval {
             stack,
@@ -279,7 +270,13 @@ impl<'a> ZapEval<'a> {
         ) = (self.pop(), self.pop(), self.pop())
         {
             let public_key = ed25519_dalek::VerifyingKey::try_from(*public_key).unwrap();
-            let signature = ed25519_dalek::Signature::try_from(*signature).unwrap();
+            let signature = ed25519_dalek::Signature::try_from(*signature).expect(
+                format!(
+                    "Invalid signature format: expected 64 bytes, got {} bytes",
+                    signature.len()
+                )
+                .as_str(),
+            );
             let is_valid = public_key.verify_strict(*message, &signature).is_ok();
             self.push(StackValue::U64(if is_valid { 1 } else { 0 }));
         } else {
@@ -315,8 +312,6 @@ mod tests {
     use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
     use std::alloc::System;
 
-    use core::mem::ManuallyDrop;
-
     use super::*;
     use bumpalo::Bump;
     #[global_allocator]
@@ -330,10 +325,7 @@ mod tests {
         let bump = Bump::with_capacity(1_000);
         bump.set_allocation_limit(Some(1_000));
 
-        let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-        let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
-
-        let mut eval = ZapEval::new(&mut stack, &bump, &mut vecs, program);
+        let mut eval = ZapEval::new(&bump, program);
 
         let region = Region::new(&GLOBAL);
         eval.run();
@@ -341,7 +333,7 @@ mod tests {
 
         assert_eq!(alloc_stats.allocations, 0);
         assert_eq!(alloc_stats.reallocations, 0);
-        assert_eq!(eval.stack, expected_stack);
+        assert_eq!(eval.stack.as_slice(), expected_stack);
 
         additional_assertions(&eval);
     }

@@ -4,9 +4,8 @@ use rand::Rng;
 use std::mem::ManuallyDrop;
 extern crate alloc;
 
-use alloc::vec::Vec;
 use bumpalo::Bump;
-use zap_vm::{ZAP_STACK_CAPACITY, ZapEval};
+use zap_vm::ZapEval;
 
 // Helper function to reduce code duplication across benchmarks
 fn run_benchmark<S, M>(c: &mut Criterion, name: &str, setup: S, measure: M)
@@ -14,32 +13,24 @@ where
     S: Fn(&mut ZapEval) + Copy,
     M: Fn(&mut ZapEval) + Copy,
 {
-    let mut stack = Vec::with_capacity(ZAP_STACK_CAPACITY);
-    let mut vecs = ManuallyDrop::new(Vec::with_capacity(100));
     let mut bump = Bump::with_capacity(16_000);
     let bump_ptr = &mut bump as *mut Bump;
     let instructions = vec![];
 
-    unsafe {
-        let mut eval = ZapEval::new(&mut stack, &*bump_ptr, &mut vecs, &instructions);
-
-        let eval_ptr = &mut eval as *mut ZapEval;
-
-        c.bench_function(name, |b| {
-            b.iter_batched(
-                || {
-                    let eval = &mut *eval_ptr;
-                    eval.stack.clear();
-                    bump.reset();
-                    setup(eval);
-                },
-                |_| {
-                    measure(&mut *eval_ptr);
-                },
-                BatchSize::PerIteration,
-            );
-        });
-    }
+    c.bench_function(name, |b| {
+        b.iter_batched(
+            || {
+                bump.reset();
+                let mut eval = unsafe { ZapEval::new(&*bump_ptr, &instructions) };
+                setup(&mut eval);
+                eval
+            },
+            |mut eval| {
+                measure(&mut eval);
+            },
+            BatchSize::PerIteration,
+        );
+    });
 }
 
 fn benchmark_op_add(c: &mut Criterion) {
