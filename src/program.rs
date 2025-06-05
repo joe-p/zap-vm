@@ -48,7 +48,12 @@ pub enum InstructionParseError {
 
 impl<'block_arena> Instruction<'block_arena> {
     /// Converts a byte array to a sequence of instructions
-    // TODO: Return ArenaVec instead of Vec
+    /// The block arena is used to allocate memory for byte slices
+    ///
+    /// NOTE: we return a heap-allocated vector instead of arena-allocated, this is because the
+    /// capacity of the vector is not known at compile time thus we would need to constantly
+    /// re-allocate the vector if we also allocate bytes. Perhaps in the future we have a separate
+    /// arena for instructions
     pub fn from_bytes(
         bytes: &'block_arena [u8],
         block_arena: &'block_arena Bump,
