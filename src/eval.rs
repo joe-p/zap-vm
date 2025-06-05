@@ -14,41 +14,41 @@ pub struct VecHandle(u32);
 /// Represents a value that can be stored on the stack in the ZAP VM.
 /// The size of this enum is 24 bytes
 #[derive(Clone, Default, Debug, PartialEq)]
-pub enum StackValue<'a> {
+pub enum StackValue<'eval_arena> {
     /// Unsigned 64-bit integer value.
     U64(u64),
     /// Byte array allocated in the bump allocator.
     /// This is a double reference so we can have a thinner pointer in
     /// the enum thus reducing the size of the enum from 24 bytes to 16 bytes.
-    Bytes(&'a &'a [u8]),
+    Bytes(&'eval_arena &'eval_arena [u8]),
     /// Vector of StackValues, allocated in the bump allocator.
     Vec(VecHandle),
     #[default]
     Void,
 }
 
-pub struct ZapEval<'a> {
+pub struct ZapEval<'eval_arena> {
     /// The stack used for evaluation, which can hold a variety of StackValue types.
     /// The stack is NOT allocated in the bump allocator but should be initialized with a capacity
     /// that will never be exceeded.
-    pub stack: &'a mut BumpVec<'a, StackValue<'a>>,
+    pub stack: &'eval_arena mut BumpVec<'eval_arena, StackValue<'eval_arena>>,
     /// The bump allocator used for allocating memory for StackValue::Bytes and StackValue::Vec
-    bump: &'a bumpalo::Bump,
+    bump: &'eval_arena bumpalo::Bump,
     /// A vector of bump-allocated vectors. This vector only stores the handles. The actual data is
     /// allocated in the bump allocator. Should be allocated with a capcity that will never be exceeded.
-    pub vecs: &'a mut BumpVec<'a, BumpVec<'a, StackValue<'a>>>,
+    pub vecs: &'eval_arena mut BumpVec<'eval_arena, BumpVec<'eval_arena, StackValue<'eval_arena>>>,
     /// Scratch slots used for storing StackValues accessible throughout the entire program.
-    pub scratch_slots: &'a mut [StackValue<'a>],
+    pub scratch_slots: &'eval_arena mut [StackValue<'eval_arena>],
     /// The program being executed, which is a sequence of instructions.
-    program: &'a [Instruction<'a>],
+    program: &'eval_arena [Instruction<'eval_arena>],
     /// The current position in the program being executed. May go backwards with branching instructions.
     program_counter: usize,
 }
 
-impl<'a> ZapEval<'a> {
+impl<'eval_arena> ZapEval<'eval_arena> {
     /// Creates a new ZapEval instance with a mutable reference to a stack and a bump allocator.
     /// Both the stack and the bump allocator are expected to be cleared/reset before use
-    pub fn new(bump: &'a bumpalo::Bump, program: &'a [Instruction]) -> Self {
+    pub fn new(bump: &'eval_arena bumpalo::Bump, program: &'eval_arena [Instruction]) -> Self {
         let used_capacity = bump.allocated_bytes() - bump.chunk_capacity();
 
         // We need to also check against 6*word size after resets until this PR is merged:
@@ -87,7 +87,7 @@ impl<'a> ZapEval<'a> {
         }
     }
 
-    pub fn execute_instruction(&mut self, instruction: &'a Instruction) {
+    pub fn execute_instruction(&mut self, instruction: &'eval_arena Instruction) {
         match instruction {
             Instruction::PushInt(value) => self.op_push_int(*value),
             Instruction::PushBytes(bytes) => self.op_push_bytes(bytes),
@@ -106,14 +106,14 @@ impl<'a> ZapEval<'a> {
         }
     }
 
-    pub fn push(&mut self, value: StackValue<'a>) {
+    pub fn push(&mut self, value: StackValue<'eval_arena>) {
         if self.stack.len() == self.stack.capacity() {
             panic!("Stack overflow: too many items on the stack");
         }
         self.stack.push(value);
     }
 
-    pub fn pop(&mut self) -> Option<StackValue<'a>> {
+    pub fn pop(&mut self) -> Option<StackValue<'eval_arena>> {
         self.stack.pop()
     }
 
@@ -128,7 +128,7 @@ impl<'a> ZapEval<'a> {
         self.push(StackValue::U64(value));
     }
 
-    pub fn op_push_bytes(&mut self, bytes: &'a [u8]) {
+    pub fn op_push_bytes(&mut self, bytes: &'eval_arena [u8]) {
         // Store the bytes reference in the bump allocator and then store a reference to that
         let bytes_ref = self.bump.alloc(bytes);
         self.push(StackValue::Bytes(bytes_ref));
