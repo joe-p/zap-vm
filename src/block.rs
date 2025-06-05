@@ -4,9 +4,11 @@ use bumpalo::Bump;
 
 use crate::Instruction;
 
-pub fn eval_block(programs_bytecode: &[&[u8]]) -> Result<(), String> {
-    let block_arena = Bump::with_capacity(1_000_000);
-
+pub fn eval_block(
+    programs_bytecode: &[&[u8]],
+    block_arena: &mut Bump,
+    eval_arena: &mut Bump,
+) -> Result<(), String> {
     let mut program_map = HashMap::<&[u8], &[Instruction]>::new();
 
     for bytecode in programs_bytecode {
@@ -22,7 +24,6 @@ pub fn eval_block(programs_bytecode: &[&[u8]]) -> Result<(), String> {
         program_map.insert(bytecode, instructions);
     }
 
-    let mut eval_arena = Bump::with_capacity(1_000_000);
     for instructions in program_map.values() {
         eval_arena.reset();
         let mut eval = crate::ZapEval::new(&eval_arena, instructions);
@@ -70,17 +71,18 @@ mod tests {
         ];
         let programs_bytecode = programs_bytecode.as_slice();
 
+        let mut eval_arena = Bump::with_capacity(1_000_000);
+        let mut block_arena = Bump::with_capacity(1_000_000);
+
         let region = Region::new(&GLOBAL);
-        let result = eval_block(&programs_bytecode);
+        let result = eval_block(&programs_bytecode, &mut block_arena, &mut eval_arena);
         let alloc_stats = region.change();
 
         assert!(result.is_ok(), "Expected eval_block to succeed");
 
-        // Four allocations:
-        // 1. block_arena
-        // 2. program_map
-        // 3. instructions program (which is then cached in the program_map)
-        // 4. eval_arena
-        assert_eq!(alloc_stats.allocations, 4);
+        // Two allocations:
+        // 1. program_map
+        // 2. instructions program (which is then cached in the program_map)
+        assert_eq!(alloc_stats.allocations, 2);
     }
 }
