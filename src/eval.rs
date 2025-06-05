@@ -40,7 +40,7 @@ pub struct ZapEval<'a> {
     /// Scratch slots used for storing StackValues accessible throughout the entire program.
     pub scratch_slots: &'a mut [StackValue<'a>],
     /// The program being executed, which is a sequence of instructions.
-    program: &'a [Instruction],
+    program: &'a [Instruction<'a>],
     /// The current position in the program being executed. May go backwards with branching instructions.
     program_counter: usize,
 }
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn bytes_len() {
         // Create a program with PushBytes and BytesLen instructions
-        let test_bytes = [1, 2, 3, 4].to_vec();
+        let test_bytes = [1, 2, 3, 4].as_slice();
         let program = [Instruction::PushBytes(test_bytes), Instruction::BytesLen];
 
         let expected_stack = [StackValue::U64(4)];
@@ -417,10 +417,13 @@ mod tests {
     #[test]
     pub fn byte_add() {
         // Create a program that tests byte addition
+
+        let b1 = [2].as_slice();
+        let b2 = [3].as_slice();
         let program = [
-            Instruction::PushBytes(vec![2]), // Push first byte
-            Instruction::PushBytes(vec![3]), // Push second byte
-            Instruction::ByteAdd,            // Add the bytes
+            Instruction::PushBytes(&b1), // Push first byte
+            Instruction::PushBytes(&b2), // Push second byte
+            Instruction::ByteAdd,        // Add the bytes
         ];
 
         run_test(&program, &[StackValue::Bytes(&&[5].as_slice())], |eval| {

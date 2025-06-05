@@ -79,16 +79,18 @@ fn bench_parse_instructions(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("instruction_parsing");
 
+    let bump = bumpalo::Bump::new();
+
     group.bench_function("small_program", |b| {
-        b.iter(|| Instruction::from_bytes(black_box(&small_bytecode)).unwrap());
+        b.iter(|| Instruction::from_bytes(black_box(&small_bytecode), &bump).unwrap());
     });
 
     group.bench_function("medium_program", |b| {
-        b.iter(|| Instruction::from_bytes(black_box(&medium_bytecode)).unwrap());
+        b.iter(|| Instruction::from_bytes(black_box(&medium_bytecode), &bump).unwrap());
     });
 
     group.bench_function("large_program", |b| {
-        b.iter(|| Instruction::from_bytes(black_box(&large_bytecode)).unwrap());
+        b.iter(|| Instruction::from_bytes(black_box(&large_bytecode), &bump).unwrap());
     });
 
     group.finish();
