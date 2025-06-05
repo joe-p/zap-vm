@@ -1,7 +1,6 @@
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use ed25519_dalek::{SigningKey, ed25519::signature::SignerMut};
 use rand::Rng;
-use std::mem::ManuallyDrop;
 extern crate alloc;
 
 use bumpalo::Bump;
@@ -153,9 +152,12 @@ fn benchmark_alternating_vecs_over_capacity(c: &mut Criterion) {
 fn benchmark_op_byte_add_u512(c: &mut Criterion) {
     let hex128 = "102030405060708090a0b0c0d0e0f000";
     let u512 = format!("{}", hex128.repeat(4));
-    let u512_bytes = ManuallyDrop::new(hex::decode(u512).expect("Failed to decode hex string"));
-
-    let u512_bytes_ref = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&u512_bytes) };
+    let u512_bytes = Box::leak(
+        hex::decode(u512)
+            .expect("Failed to decode hex string")
+            .into_boxed_slice(),
+    );
+    let u512_bytes_ref = Box::leak(Box::new(u512_bytes as &[u8]));
 
     run_benchmark(
         c,
@@ -174,17 +176,20 @@ fn benchmark_op_byte_add_u512(c: &mut Criterion) {
 fn benchmark_op_byte_add_u256(c: &mut Criterion) {
     let hex128 = "102030405060708090a0b0c0d0e0f000";
     let u256 = format!("{}", hex128.repeat(4));
-    let u256_bytes = ManuallyDrop::new(hex::decode(u256).expect("Failed to decode hex string"));
-
-    let bytes_ref = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&u256_bytes) };
+    let u256_bytes = Box::leak(
+        hex::decode(u256)
+            .expect("Failed to decode hex string")
+            .into_boxed_slice(),
+    );
+    let u256_bytes_ref = Box::leak(Box::new(u256_bytes as &[u8]));
 
     run_benchmark(
         c,
         "op_byte_add_u256",
         |eval| {
             // Push two bytes onto the stack
-            eval.op_push_bytes(black_box(bytes_ref));
-            eval.op_push_bytes(black_box(bytes_ref));
+            eval.op_push_bytes(black_box(u256_bytes_ref));
+            eval.op_push_bytes(black_box(u256_bytes_ref));
         },
         |eval| {
             eval.op_byte_add();
@@ -195,9 +200,12 @@ fn benchmark_op_byte_add_u256(c: &mut Criterion) {
 fn benchmark_op_byte_sqrt_u512(c: &mut Criterion) {
     let hex128 = "102030405060708090a0b0c0d0e0f000";
     let u512 = format!("{}", hex128.repeat(4));
-    let u512_bytes = ManuallyDrop::new(hex::decode(u512).expect("Failed to decode hex string"));
-
-    let u512_bytes_ref = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&u512_bytes) };
+    let u512_bytes = Box::leak(
+        hex::decode(u512)
+            .expect("Failed to decode hex string")
+            .into_boxed_slice(),
+    );
+    let u512_bytes_ref = Box::leak(Box::new(u512_bytes as &[u8]));
 
     run_benchmark(
         c,
@@ -225,18 +233,20 @@ fn benchmark_op_ed25516_verify(c: &mut Criterion) {
     let message = b"Hello, world!";
     let signature = signing_key.sign(message);
 
-    let sig_bytes = signature.to_bytes();
-    let sig_bytes_ref = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&sig_bytes) };
+    let sig_bytes = Box::leak(signature.to_bytes().to_vec().into_boxed_slice());
+    let sig_bytes_ref = Box::leak(Box::new(sig_bytes as &[u8]));
 
-    let public_key_bytes = public_key.to_bytes();
-    let public_key_bytes_ref =
-        unsafe { std::mem::transmute::<&[u8], &'static [u8]>(&public_key_bytes) };
+    let public_key_bytes = Box::leak(public_key.to_bytes().to_vec().into_boxed_slice());
+    let public_key_bytes_ref = Box::leak(Box::new(public_key_bytes as &[u8]));
+
+    let message_bytes = Box::leak(message.to_vec().into_boxed_slice());
+    let message_bytes_ref = Box::leak(Box::new(message_bytes as &[u8]));
 
     run_benchmark(
         c,
         "op_ed25519_verify",
         |eval| {
-            eval.op_push_bytes(black_box(b"Hello, world!"));
+            eval.op_push_bytes(black_box(message_bytes_ref));
             eval.op_push_bytes(black_box(public_key_bytes_ref));
             eval.op_push_bytes(black_box(sig_bytes_ref));
         },

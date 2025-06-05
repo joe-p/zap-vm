@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use bumpalo::Bump;
 
+#[derive(Debug, Clone, Copy)]
 pub enum Instruction<'block_arena> {
     PushInt(u64),
     PushBytes(&'block_arena [u8]),

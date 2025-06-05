@@ -27,7 +27,7 @@ pub enum StackValue<'eval_arena> {
     Void,
 }
 
-pub struct ZapEval<'eval_arena> {
+pub struct ZapEval<'eval_arena, 'block_arena: 'eval_arena> {
     /// The stack used for evaluation, which can hold a variety of StackValue types.
     pub stack: &'eval_arena mut ArenaVec<'eval_arena, StackValue<'eval_arena>>,
     /// The arena used for allocating memory for the stack, scratch, StackValue::Bytes and StackValue::Vec
@@ -38,15 +38,15 @@ pub struct ZapEval<'eval_arena> {
     /// Scratch slots used for storing StackValues accessible throughout the entire program.
     pub scratch_slots: &'eval_arena mut [StackValue<'eval_arena>],
     /// The program being executed, which is a sequence of instructions.
-    program: &'eval_arena [Instruction<'eval_arena>],
+    program: &'block_arena [Instruction<'block_arena>],
     /// The current position in the program being executed. May go backwards with branching instructions.
     program_counter: usize,
 }
 
-impl<'eval_arena> ZapEval<'eval_arena> {
+impl<'eval_arena, 'block_arena: 'eval_arena> ZapEval<'eval_arena, 'block_arena> {
     /// Creates a new ZapEval instance with a mutable reference to a stack and a bump allocator.
     /// The arena must be reset before each new evaluation to ensure no leftover data from previous evaluations.
-    pub fn new(arena: &'eval_arena bumpalo::Bump, program: &'eval_arena [Instruction]) -> Self {
+    pub fn new(arena: &'eval_arena bumpalo::Bump, program: &'block_arena [Instruction]) -> Self {
         let used_capacity = arena.allocated_bytes() - arena.chunk_capacity();
 
         // We need to also check against 6*word size after resets until this PR is merged:
@@ -85,7 +85,7 @@ impl<'eval_arena> ZapEval<'eval_arena> {
         }
     }
 
-    pub fn execute_instruction(&mut self, instruction: &'eval_arena Instruction) {
+    pub fn execute_instruction(&mut self, instruction: &'block_arena Instruction) {
         match instruction {
             Instruction::PushInt(value) => self.op_push_int(*value),
             Instruction::PushBytes(bytes) => self.op_push_bytes(bytes),
@@ -126,10 +126,8 @@ impl<'eval_arena> ZapEval<'eval_arena> {
         self.push(StackValue::U64(value));
     }
 
-    pub fn op_push_bytes(&mut self, bytes: &'eval_arena [u8]) {
-        // Store the bytes reference in the arena and then store a reference to that
-        let bytes_ref = self.arena.alloc(bytes);
-        self.push(StackValue::Bytes(bytes_ref));
+    pub fn op_push_bytes(&mut self, bytes: &'block_arena &'block_arena [u8]) {
+        self.push(StackValue::Bytes(bytes));
     }
 
     pub fn op_bytes_len(&mut self) {
@@ -307,13 +305,11 @@ impl<'eval_arena> ZapEval<'eval_arena> {
 mod tests {
     extern crate stats_alloc;
 
-    use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
-    use std::alloc::System;
+    use crate::GLOBAL;
+    use stats_alloc::Region;
 
     use super::*;
     use bumpalo::Bump;
-    #[global_allocator]
-    static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 
     fn run_test(
         program: &[Instruction],
