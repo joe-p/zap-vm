@@ -1,32 +1,11 @@
-use std::collections::HashMap;
-
 use bumpalo::Bump;
 
 use crate::Instruction;
 
-pub fn eval_sequence(
-    programs_bytecode: &[&[u8]],
-    sequence_arena: &mut Bump,
-    eval_arena: &mut Bump,
-) -> Result<(), String> {
-    let mut program_map = HashMap::<&[u8], &[Instruction]>::new();
-
-    for bytecode in programs_bytecode {
-        if program_map.contains_key(bytecode) {
-            continue; // Skip if already parsed
-        }
-
-        let instructions = Instruction::from_bytes(bytecode, &sequence_arena)
-            .map_err(|_| format!("Failed to parse bytecode"))?;
-
-        let instructions = sequence_arena.alloc(instructions);
-
-        program_map.insert(bytecode, instructions);
-    }
-
-    for instructions in program_map.values() {
+pub fn eval_sequence(programs: &[&[Instruction]], eval_arena: &mut Bump) -> Result<(), String> {
+    for program in programs {
         eval_arena.reset();
-        let mut eval = crate::ZapEval::new(&eval_arena, instructions);
+        let mut eval = crate::ZapEval::new(&eval_arena, program);
         eval.run()
     }
     Ok(())
@@ -34,12 +13,16 @@ pub fn eval_sequence(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::opcodes::{ADD, POP, PUSH_BYTES, PUSH_INT};
 
     use crate::GLOBAL;
     use stats_alloc::Region;
 
     use super::*;
+
+    use bumpalo::collections::Vec as ArenaVec;
 
     #[test]
     fn test_eval_sequence() {
@@ -71,18 +54,36 @@ mod tests {
         ];
         let programs_bytecode = programs_bytecode.as_slice();
 
+        let block_arena = Bump::with_capacity(1_000_000);
+
+        let mut program_map = HashMap::<&[u8], &[Instruction]>::new();
+
+        let mut programs = ArenaVec::with_capacity_in(programs_bytecode.len(), &block_arena);
+
+        for bytecode in programs_bytecode {
+            if program_map.contains_key(bytecode) {
+                programs.push(program_map[bytecode]);
+                continue; // Skip if already parsed
+            }
+
+            let program = Instruction::from_bytes(bytecode, &block_arena)
+                .map_err(|_| format!("Failed to parse bytecode"))
+                .unwrap();
+
+            let program = block_arena.alloc(program);
+
+            program_map.insert(bytecode, program);
+            programs.push(program);
+        }
+
         let mut eval_arena = Bump::with_capacity(1_000_000);
-        let mut sequence_arena = Bump::with_capacity(1_000_000);
 
         let region = Region::new(&GLOBAL);
-        let result = eval_sequence(&programs_bytecode, &mut sequence_arena, &mut eval_arena);
+        let result = eval_sequence(&programs, &mut eval_arena);
         let alloc_stats = region.change();
 
         assert!(result.is_ok(), "Expected eval_sequence to succeed");
 
-        // Two allocations:
-        // 1. program_map
-        // 2. instructions program (which is then cached in the program_map)
-        assert_eq!(alloc_stats.allocations, 2);
+        assert_eq!(alloc_stats.allocations, 0);
     }
 }
