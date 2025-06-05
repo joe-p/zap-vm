@@ -49,9 +49,9 @@ impl<'eval_arena, 'block_arena: 'eval_arena> ZapEval<'eval_arena, 'block_arena> 
     pub fn new(arena: &'eval_arena bumpalo::Bump, program: &'block_arena [Instruction]) -> Self {
         let used_capacity = arena.allocated_bytes() - arena.chunk_capacity();
 
-        // We need to also check against 6*word size after resets until this PR is merged:
+        // We need to check against 6*word size after resets (instead of 0) until this PR is released:
         // https://github.com/fitzgen/bumpalo/pull/275
-        if used_capacity != 0 && used_capacity != 6 * mem::size_of::<usize>() {
+        if used_capacity > 6 * mem::size_of::<usize>() {
             panic!("Bump allocator must be reset before creating ZapEval",);
         }
 
