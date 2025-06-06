@@ -11,9 +11,13 @@ A collection of programs (at this point just bytecode) that need to be executed.
 
 #### Arenas & Lifetimes
 
-##### block_arena
+##### bytes_arena
 
-Contains allocations for programs and their `Instruction`s. Arena itself is long living (maybe `'static`?) and reset every block
+Allocates byte slices from the bytecode of programs
+
+##### program_arena
+
+Allocates disassembled program instructions
 
 #### Allocations
 
@@ -49,6 +53,6 @@ Given a program, execute it and determine the result
 
 Contains allocations for everything that happens during evaluation such as new byte slices and vecs. Arena itself is long living (maybe `'static`?) and reset at the beginning of every eval
 
-#### Allocations 
+#### Allocations
 
 None
