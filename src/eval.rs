@@ -27,7 +27,7 @@ pub enum StackValue<'eval_arena> {
     Void,
 }
 
-pub struct ZapEval<'eval_arena, 'sequence_arena: 'eval_arena> {
+pub struct ZapEval<'eval_arena, 'program_arena: 'eval_arena> {
     /// The stack used for evaluation, which can hold a variety of StackValue types.
     pub stack: &'eval_arena mut ArenaVec<'eval_arena, StackValue<'eval_arena>>,
     /// The arena used for allocating memory for the stack, scratch, StackValue::Bytes and StackValue::Vec
@@ -38,15 +38,15 @@ pub struct ZapEval<'eval_arena, 'sequence_arena: 'eval_arena> {
     /// Scratch slots used for storing StackValues accessible throughout the entire program.
     pub scratch_slots: &'eval_arena mut [StackValue<'eval_arena>],
     /// The program being executed, which is a sequence of instructions.
-    program: &'sequence_arena [Instruction<'sequence_arena>],
+    program: &'program_arena [Instruction<'program_arena>],
     /// The current position in the program being executed. May go backwards with branching instructions.
     program_counter: usize,
 }
 
-impl<'eval_arena, 'sequence_arena: 'eval_arena> ZapEval<'eval_arena, 'sequence_arena> {
+impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_arena> {
     /// Creates a new ZapEval instance with a mutable reference to a stack and a bump allocator.
     /// The arena must be reset before each new evaluation to ensure no leftover data from previous evaluations.
-    pub fn new(arena: &'eval_arena bumpalo::Bump, program: &'sequence_arena [Instruction]) -> Self {
+    pub fn new(arena: &'eval_arena bumpalo::Bump, program: &'program_arena [Instruction]) -> Self {
         let used_capacity = arena.allocated_bytes() - arena.chunk_capacity();
 
         // We need to check against 6*word size after resets (instead of 0) until this PR is released:
@@ -85,7 +85,7 @@ impl<'eval_arena, 'sequence_arena: 'eval_arena> ZapEval<'eval_arena, 'sequence_a
         }
     }
 
-    pub fn execute_instruction(&mut self, instruction: &'sequence_arena Instruction) {
+    pub fn execute_instruction(&mut self, instruction: &'program_arena Instruction) {
         match instruction {
             Instruction::PushInt(value) => self.op_push_int(*value),
             Instruction::PushBytes(bytes) => self.op_push_bytes(bytes),
@@ -126,7 +126,7 @@ impl<'eval_arena, 'sequence_arena: 'eval_arena> ZapEval<'eval_arena, 'sequence_a
         self.push(StackValue::U64(value));
     }
 
-    pub fn op_push_bytes(&mut self, bytes: &'sequence_arena &'sequence_arena [u8]) {
+    pub fn op_push_bytes(&mut self, bytes: &'program_arena &'program_arena [u8]) {
         self.push(StackValue::Bytes(bytes));
     }
 
