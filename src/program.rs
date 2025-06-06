@@ -46,106 +46,104 @@ pub enum InstructionParseError {
     InvalidDataLength,
 }
 
-impl<'program_arena, 'bytes_arena: 'program_arena> Instruction<'program_arena> {
-    /// Converts a byte array to a sequence of instructions
-    /// The bytes arena is used to allocate byte slices
-    /// The program arena is used to allocate the instructions
-    /// These are separated because the size of both are unknown and we don't want to continuously
-    /// re-allocate when we go over capacity.
-    pub fn from_bytes(
-        bytes: &'bytes_arena [u8],
-        bytes_arena: &'bytes_arena Bump,
-        program_arena: &'program_arena Bump,
-    ) -> Result<ArenaVec<'program_arena, Instruction<'program_arena>>, InstructionParseError> {
-        let mut instructions = ArenaVec::new_in(program_arena);
-        let mut index = 0;
+/// Converts a byte array to a sequence of instructions
+/// The bytes arena is used to allocate byte slices
+/// The program arena is used to allocate the instructions
+/// These are separated because the size of both are unknown and we don't want to continuously
+/// re-allocate when we go over capacity.
+pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
+    bytes: &'bytes_arena [u8],
+    bytes_arena: &'bytes_arena Bump,
+    program_arena: &'program_arena Bump,
+) -> Result<ArenaVec<'program_arena, Instruction<'program_arena>>, InstructionParseError> {
+    let mut instructions = ArenaVec::new_in(program_arena);
+    let mut index = 0;
 
-        while index < bytes.len() {
-            let opcode = bytes[index];
-            index += 1;
+    while index < bytes.len() {
+        let opcode = bytes[index];
+        index += 1;
 
-            match opcode {
-                opcodes::PUSH_INT => {
-                    if index + 8 > bytes.len() {
-                        return Err(InstructionParseError::UnexpectedEndOfBytes);
-                    }
+        match opcode {
+            opcodes::PUSH_INT => {
+                if index + 8 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
 
-                    let mut value_bytes = [0u8; 8];
-                    value_bytes.copy_from_slice(&bytes[index..index + 8]);
-                    let value = u64::from_be_bytes(value_bytes);
+                let mut value_bytes = [0u8; 8];
+                value_bytes.copy_from_slice(&bytes[index..index + 8]);
+                let value = u64::from_be_bytes(value_bytes);
 
-                    instructions.push(Instruction::PushInt(value));
-                    index += 8;
-                }
-                opcodes::PUSH_BYTES => {
-                    if index + 2 > bytes.len() {
-                        return Err(InstructionParseError::UnexpectedEndOfBytes);
-                    }
-
-                    let mut len_bytes = [0u8; 2];
-                    len_bytes.copy_from_slice(&bytes[index..index + 2]);
-                    let len = u16::from_be_bytes(len_bytes) as usize;
-                    index += 2;
-
-                    if index + len > bytes.len() {
-                        return Err(InstructionParseError::UnexpectedEndOfBytes);
-                    }
-
-                    let data = bytes_arena.alloc(&bytes[index..index + len]);
-                    instructions.push(Instruction::PushBytes(data));
-                    index += len;
-                }
-                opcodes::BYTES_LEN => {
-                    instructions.push(Instruction::BytesLen);
-                }
-                opcodes::ADD => {
-                    instructions.push(Instruction::Add);
-                }
-                opcodes::INIT_VEC_WITH_INITIAL_CAPACITY => {
-                    instructions.push(Instruction::InitVecWithInitialCapacity);
-                }
-                opcodes::PUSH_VEC => {
-                    instructions.push(Instruction::PushVec);
-                }
-                opcodes::SCRATCH_STORE => {
-                    instructions.push(Instruction::ScratchStore);
-                }
-                opcodes::SCRATCH_LOAD => {
-                    instructions.push(Instruction::ScratchLoad);
-                }
-                opcodes::BYTE_ADD => {
-                    instructions.push(Instruction::ByteAdd);
-                }
-                opcodes::BYTE_SQRT => {
-                    instructions.push(Instruction::ByteSqrt);
-                }
-                opcodes::ED25519_VERIFY => {
-                    instructions.push(Instruction::Ed25519Verify);
-                }
-                opcodes::BRANCH => {
-                    if index + 2 > bytes.len() {
-                        return Err(InstructionParseError::UnexpectedEndOfBytes);
-                    }
-
-                    let mut branch_bytes = [0u8; 2];
-                    branch_bytes.copy_from_slice(&bytes[index..index + 2]);
-                    let branch = u16::from_be_bytes(branch_bytes);
-
-                    instructions.push(Instruction::Branch(branch));
-                    index += 2;
-                }
-                opcodes::GET_ELEMENT => {
-                    instructions.push(Instruction::GetElement);
-                }
-                opcodes::POP => {
-                    instructions.push(Instruction::Pop);
-                }
-                _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
+                instructions.push(Instruction::PushInt(value));
+                index += 8;
             }
-        }
+            opcodes::PUSH_BYTES => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
 
-        Ok(instructions)
+                let mut len_bytes = [0u8; 2];
+                len_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let len = u16::from_be_bytes(len_bytes) as usize;
+                index += 2;
+
+                if index + len > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let data = bytes_arena.alloc(&bytes[index..index + len]);
+                instructions.push(Instruction::PushBytes(data));
+                index += len;
+            }
+            opcodes::BYTES_LEN => {
+                instructions.push(Instruction::BytesLen);
+            }
+            opcodes::ADD => {
+                instructions.push(Instruction::Add);
+            }
+            opcodes::INIT_VEC_WITH_INITIAL_CAPACITY => {
+                instructions.push(Instruction::InitVecWithInitialCapacity);
+            }
+            opcodes::PUSH_VEC => {
+                instructions.push(Instruction::PushVec);
+            }
+            opcodes::SCRATCH_STORE => {
+                instructions.push(Instruction::ScratchStore);
+            }
+            opcodes::SCRATCH_LOAD => {
+                instructions.push(Instruction::ScratchLoad);
+            }
+            opcodes::BYTE_ADD => {
+                instructions.push(Instruction::ByteAdd);
+            }
+            opcodes::BYTE_SQRT => {
+                instructions.push(Instruction::ByteSqrt);
+            }
+            opcodes::ED25519_VERIFY => {
+                instructions.push(Instruction::Ed25519Verify);
+            }
+            opcodes::BRANCH => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut branch_bytes = [0u8; 2];
+                branch_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let branch = u16::from_be_bytes(branch_bytes);
+
+                instructions.push(Instruction::Branch(branch));
+                index += 2;
+            }
+            opcodes::GET_ELEMENT => {
+                instructions.push(Instruction::GetElement);
+            }
+            opcodes::POP => {
+                instructions.push(Instruction::Pop);
+            }
+            _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
+        }
     }
+
+    Ok(instructions)
 }
 
 #[cfg(test)]
@@ -172,7 +170,7 @@ mod tests {
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
 
-        let result = Instruction::from_bytes(&bytecode, &bytes_arena, &program_arena).unwrap();
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
         assert_eq!(result.len(), 3);
 
         match &result[0] {
@@ -201,7 +199,7 @@ mod tests {
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
 
-        match Instruction::from_bytes(&bytecode, &bytes_arena, &program_arena) {
+        match disassemble_bytecode(&bytecode, &bytes_arena, &program_arena) {
             Err(InstructionParseError::InvalidOpcode(opcode)) => assert_eq!(opcode, 0xFF),
             _ => panic!("Expected InvalidOpcode error"),
         }
@@ -215,7 +213,7 @@ mod tests {
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
 
-        match Instruction::from_bytes(&bytecode, &bytes_arena, &program_arena) {
+        match disassemble_bytecode(&bytecode, &bytes_arena, &program_arena) {
             Err(InstructionParseError::UnexpectedEndOfBytes) => {}
             _ => panic!("Expected UnexpectedEndOfBytes error"),
         }

@@ -18,6 +18,7 @@ mod tests {
     use crate::opcodes::{ADD, POP, PUSH_BYTES, PUSH_INT};
 
     use crate::GLOBAL;
+    use crate::program::disassemble_bytecode;
     use stats_alloc::Region;
 
     use super::*;
@@ -67,7 +68,7 @@ mod tests {
                 continue; // Skip if already parsed
             }
 
-            let program = Instruction::from_bytes(bytecode, &bytes_arena, &program_arena)
+            let program = disassemble_bytecode(bytecode, &bytes_arena, &program_arena)
                 .map_err(|_| format!("Failed to parse bytecode"))
                 .unwrap();
 

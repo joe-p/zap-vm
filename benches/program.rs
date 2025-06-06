@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use zap_vm::{Instruction, opcodes};
+use zap_vm::{opcodes, program::disassemble_bytecode};
 
 fn create_small_bytecode() -> Vec<u8> {
     let mut bytecode = Vec::new();
@@ -84,7 +84,7 @@ fn bench_parse_instructions(c: &mut Criterion) {
 
     group.bench_function("small_program", |b| {
         b.iter(|| {
-            Instruction::from_bytes(
+            disassemble_bytecode(
                 black_box(&small_bytecode),
                 &bytes_allocator,
                 &program_allocator,
@@ -95,7 +95,7 @@ fn bench_parse_instructions(c: &mut Criterion) {
 
     group.bench_function("medium_program", |b| {
         b.iter(|| {
-            Instruction::from_bytes(
+            disassemble_bytecode(
                 black_box(&medium_bytecode),
                 &bytes_allocator,
                 &program_allocator,
@@ -106,7 +106,7 @@ fn bench_parse_instructions(c: &mut Criterion) {
 
     group.bench_function("large_program", |b| {
         b.iter(|| {
-            Instruction::from_bytes(
+            disassemble_bytecode(
                 black_box(&large_bytecode),
                 &bytes_allocator,
                 &program_allocator,
