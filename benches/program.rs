@@ -79,18 +79,40 @@ fn bench_parse_instructions(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("instruction_parsing");
 
-    let bump = bumpalo::Bump::new();
+    let bytes_allocator = bumpalo::Bump::with_capacity(10 * 1024 * 1024); // 10 MB arena for byte allocations
+    let program_allocator = bumpalo::Bump::with_capacity(10 * 1024 * 1024); // 10 MB arena for program allocations
 
     group.bench_function("small_program", |b| {
-        b.iter(|| Instruction::from_bytes(black_box(&small_bytecode), &bump).unwrap());
+        b.iter(|| {
+            Instruction::from_bytes(
+                black_box(&small_bytecode),
+                &bytes_allocator,
+                &program_allocator,
+            )
+            .unwrap()
+        });
     });
 
     group.bench_function("medium_program", |b| {
-        b.iter(|| Instruction::from_bytes(black_box(&medium_bytecode), &bump).unwrap());
+        b.iter(|| {
+            Instruction::from_bytes(
+                black_box(&medium_bytecode),
+                &bytes_allocator,
+                &program_allocator,
+            )
+            .unwrap()
+        });
     });
 
     group.bench_function("large_program", |b| {
-        b.iter(|| Instruction::from_bytes(black_box(&large_bytecode), &bump).unwrap());
+        b.iter(|| {
+            Instruction::from_bytes(
+                black_box(&large_bytecode),
+                &bytes_allocator,
+                &program_allocator,
+            )
+            .unwrap()
+        });
     });
 
     group.finish();

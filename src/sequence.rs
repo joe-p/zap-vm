@@ -54,11 +54,12 @@ mod tests {
         ];
         let programs_bytecode = programs_bytecode.as_slice();
 
-        let block_arena = Bump::with_capacity(1_000_000);
+        let bytes_arena = Bump::with_capacity(10_000_000);
+        let program_arena = Bump::with_capacity(10_000_000);
 
         let mut program_map = HashMap::<&[u8], &[Instruction]>::new();
 
-        let mut programs = ArenaVec::with_capacity_in(programs_bytecode.len(), &block_arena);
+        let mut programs = ArenaVec::with_capacity_in(programs_bytecode.len(), &program_arena);
 
         for bytecode in programs_bytecode {
             if program_map.contains_key(bytecode) {
@@ -66,11 +67,11 @@ mod tests {
                 continue; // Skip if already parsed
             }
 
-            let program = Instruction::from_bytes(bytecode, &block_arena)
+            let program = Instruction::from_bytes(bytecode, &bytes_arena, &program_arena)
                 .map_err(|_| format!("Failed to parse bytecode"))
                 .unwrap();
 
-            let program = block_arena.alloc(program);
+            let program = program_arena.alloc(program);
 
             program_map.insert(bytecode, program);
             programs.push(program);
