@@ -1,27 +1,40 @@
 extern crate alloc;
 
+use crate::GLOBAL;
 use crate::assembler::Assembler;
 use crate::eval::{StackValue, ZapEval};
 use bumpalo::Bump;
+use stats_alloc::Region;
 
 /// Helper function to run an assembly program and check the result
 fn run_assembly_program(source: &str, expected_stack: &[StackValue]) {
     let bytes_arena = Bump::new();
     let program_arena = Bump::new();
     let eval_arena = Bump::new();
-    
+
     // Assemble the source code
     let mut assembler = Assembler::new(&bytes_arena);
-    let instructions = assembler.assemble(source, &program_arena)
+    let instructions = assembler
+        .assemble(source, &program_arena)
         .expect("Failed to assemble program");
 
     // Execute the program
     let mut eval = ZapEval::new(&eval_arena, &instructions);
+    let region = Region::new(&GLOBAL);
     eval.run();
+    let alloc_stats = region.change();
+
+    assert_eq!(alloc_stats.allocations, 0);
+    assert_eq!(alloc_stats.reallocations, 0);
 
     // Check the result
-    assert_eq!(eval.stack.as_slice(), expected_stack, 
-        "Expected stack: {:?}, but got: {:?}", expected_stack, eval.stack.as_slice());
+    assert_eq!(
+        eval.stack.as_slice(),
+        expected_stack,
+        "Expected stack: {:?}, but got: {:?}",
+        expected_stack,
+        eval.stack.as_slice()
+    );
 }
 
 fn rust_fibonacci(n: u64) -> u64 {
@@ -34,7 +47,8 @@ fn rust_fibonacci(n: u64) -> u64 {
 #[test]
 fn test_fibonacci_sequence() {
     let n = 6;
-    let source = format!(r#"
+    let source = format!(
+        r#"
         // Compute fibonacci(6) = 8
         int {n}
         call fib_function
@@ -69,7 +83,8 @@ fn test_fibonacci_sequence() {
         // Add fib(n-1) + fib(n-2)
         +               // fib(n-1) + fib(n-2)
         return_func
-    "#);
+    "#
+    );
 
     let expected_stack = [StackValue::U64(rust_fibonacci(n))]; // fib(6) = 8
     run_assembly_program(&source, &expected_stack);
@@ -232,4 +247,5 @@ fn test_branching_program() {
 
     let expected_stack = [StackValue::U64(100)];
     run_assembly_program(source, &expected_stack);
-} 
+}
+
