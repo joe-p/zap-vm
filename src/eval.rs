@@ -668,11 +668,11 @@ mod tests {
     pub fn op_branch_zero_takes_branch() {
         // Test that BranchZero branches when stack value is 0
         let program = [
-            Instruction::PushInt(0),       // Push 0 onto stack
-            Instruction::BranchZero(4),    // Branch to instruction 4 if top of stack is 0
-            Instruction::PushInt(1),       // This should be skipped
-            Instruction::PushInt(2),       // This should be skipped
-            Instruction::PushInt(42),      // This should be executed (target of branch)
+            Instruction::PushInt(0),    // Push 0 onto stack
+            Instruction::BranchZero(4), // Branch to instruction 4 if top of stack is 0
+            Instruction::PushInt(1),    // This should be skipped
+            Instruction::PushInt(2),    // This should be skipped
+            Instruction::PushInt(42),   // This should be executed (target of branch)
         ];
 
         let expected_stack = [StackValue::U64(42)];
@@ -686,11 +686,11 @@ mod tests {
     pub fn op_branch_zero_no_branch() {
         // Test that BranchZero doesn't branch when stack value is non-zero
         let program = [
-            Instruction::PushInt(5),       // Push non-zero value onto stack
-            Instruction::BranchZero(4),    // Should not branch since value is non-zero
-            Instruction::PushInt(1),       // This should be executed
-            Instruction::PushInt(2),       // This should be executed
-            Instruction::PushInt(42),      // This should also be executed
+            Instruction::PushInt(5),    // Push non-zero value onto stack
+            Instruction::BranchZero(4), // Should not branch since value is non-zero
+            Instruction::PushInt(1),    // This should be executed
+            Instruction::PushInt(2),    // This should be executed
+            Instruction::PushInt(42),   // This should also be executed
         ];
 
         let expected_stack = [StackValue::U64(1), StackValue::U64(2), StackValue::U64(42)];
@@ -704,11 +704,11 @@ mod tests {
     pub fn op_branch_non_zero_takes_branch() {
         // Test that BranchNonZero branches when stack value is non-zero
         let program = [
-            Instruction::PushInt(7),          // Push non-zero value onto stack
-            Instruction::BranchNonZero(4),    // Branch to instruction 4 since value is non-zero
-            Instruction::PushInt(1),          // This should be skipped
-            Instruction::PushInt(2),          // This should be skipped
-            Instruction::PushInt(99),         // This should be executed (target of branch)
+            Instruction::PushInt(7),       // Push non-zero value onto stack
+            Instruction::BranchNonZero(4), // Branch to instruction 4 since value is non-zero
+            Instruction::PushInt(1),       // This should be skipped
+            Instruction::PushInt(2),       // This should be skipped
+            Instruction::PushInt(99),      // This should be executed (target of branch)
         ];
 
         let expected_stack = [StackValue::U64(99)];
@@ -722,18 +722,21 @@ mod tests {
     pub fn op_branch_non_zero_no_branch() {
         // Test that BranchNonZero doesn't branch when stack value is 0
         let program = [
-            Instruction::PushInt(0),          // Push 0 onto stack
-            Instruction::BranchNonZero(4),    // Should not branch since value is 0
-            Instruction::PushInt(10),         // This should be executed
-            Instruction::PushInt(20),         // This should be executed
-            Instruction::PushInt(99),         // This should also be executed
+            Instruction::PushInt(0),       // Push 0 onto stack
+            Instruction::BranchNonZero(4), // Should not branch since value is 0
+            Instruction::PushInt(10),      // This should be executed
+            Instruction::PushInt(20),      // This should be executed
+            Instruction::PushInt(99),      // This should also be executed
         ];
 
-        let expected_stack = [StackValue::U64(10), StackValue::U64(20), StackValue::U64(99)];
+        let expected_stack = [
+            StackValue::U64(10),
+            StackValue::U64(20),
+            StackValue::U64(99),
+        ];
 
         run_test(&program, &expected_stack, |_eval| {
             // No additional assertions needed
         });
     }
-
 }
