@@ -140,7 +140,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             Instruction::GreaterThan => self.op_greater_than(),
             Instruction::LessThanOrEqual => self.op_less_than_or_equal(),
             Instruction::GreaterThanOrEqual => self.op_greater_than_or_equal(),
-            Instruction::Return => self.op_return(),
+            Instruction::Exit => self.op_exit(),
             Instruction::Dup => self.op_dup(),
             // Function call instructions
             Instruction::Call(target) => self.op_call(*target as usize),
@@ -483,7 +483,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
         }
     }
 
-    pub fn op_return(&mut self) {
+    pub fn op_exit(&mut self) {
         // Set program counter to end of program to terminate execution
         self.program_counter = self.program.len();
     }
@@ -1254,7 +1254,7 @@ mod tests {
         // Test that Return terminates program execution early
         let program = [
             Instruction::PushInt(42), // This should be executed
-            Instruction::Return,      // This should terminate the program
+            Instruction::Exit,        // This should terminate the program
             Instruction::PushInt(99), // This should NOT be executed
         ];
 
@@ -1324,7 +1324,7 @@ mod tests {
             Instruction::PushInt(42), // 0: arg1: Push 42 as argument
             Instruction::PushInt(10), // 1: arg2: Push 10 as argument
             Instruction::Call(4),     // 2: Call function at address 4
-            Instruction::Return,      // 3: This should not be reached due to early return
+            Instruction::Exit,        // 3: This should not be reached due to early return
             Instruction::DefineFunctionSignature(2, 0, 1), // 4: Function: 2 args, 0 locals, 1 return
             Instruction::LoadArg(0),                       // 5: Load first argument
             Instruction::LoadArg(1),                       // 6: Load second argument
@@ -1372,7 +1372,7 @@ mod tests {
             Instruction::PushInt(15),                      // arg1: Push 15 as argument
             Instruction::PushInt(25),                      // arg2: Push 25 as argument
             Instruction::Call(4),                          // Call function at address 4
-            Instruction::Return,                           // This should not be reached
+            Instruction::Exit,                             // This should not be reached
             Instruction::DefineFunctionSignature(2, 0, 1), // Function: 2 args, 0 locals, 1 return
             Instruction::LoadArg(0),                       // Load arg0 (15)
             Instruction::LoadArg(1),                       // Load arg1 (25)
@@ -1395,7 +1395,7 @@ mod tests {
         let program = [
             Instruction::PushInt(5),                       // 0: arg: Push 5 as argument
             Instruction::Call(3),                          // 1: Call function A at address 3
-            Instruction::Return,                           // 2: End of main
+            Instruction::Exit,                             // 2: End of main
             Instruction::DefineFunctionSignature(1, 0, 1), // 3: Function A: 1 arg, 0 locals, 1 return
             Instruction::Call(8), // 4: Function A: Call function B at address 8
             Instruction::LoadArg(0), // 5: Function A: Load argument and push to stack
@@ -1422,7 +1422,7 @@ mod tests {
             Instruction::PushInt(42),                      // 0: arg: Push argument
             Instruction::PushInt(4),                       // 1: Push function address
             Instruction::CallFunction,                     // 2: Call function at address on stack
-            Instruction::Return,                           // 3: End of main
+            Instruction::Exit,                             // 3: End of main
             Instruction::DefineFunctionSignature(1, 0, 1), // 4: Function: 1 arg, 0 locals, 1 return
             Instruction::LoadArg(0),                       // 5: Function: Load argument
             Instruction::PushInt(8),                       // 6: Function: Push 8
@@ -1445,7 +1445,7 @@ mod tests {
         let program = [
             Instruction::PushInt(5),                       // 0: arg: Push 5 as argument
             Instruction::Call(3),                          // 1: Call function at address 3
-            Instruction::Return,                           // 2: End of main
+            Instruction::Exit,                             // 2: End of main
             Instruction::DefineFunctionSignature(1, 2, 1), // 3: Function: 1 arg, 2 locals, 1 return
             Instruction::PushInt(10),                      // 4: Push 10
             Instruction::StoreLocal(0),                    // 5: Store 10 in local variable 0
@@ -1478,7 +1478,7 @@ mod tests {
             Instruction::PushInt(100), // 0: Push value for main function
             Instruction::PushInt(200), // 1: Push another value for main function
             Instruction::Call(4),      // 2: Call function at address 4
-            Instruction::Return,       // 3: End of main
+            Instruction::Exit,         // 3: End of main
             Instruction::DefineFunctionSignature(0, 1, 0), // 4: Function: 0 args, 1 local, 0 returns
             Instruction::Pop, // 5: Pop the local variable (this should work)
             Instruction::Pop, // 6: This should panic - trying to pop caller's values

@@ -408,7 +408,7 @@ impl<'bytes_arena> Assembler<'bytes_arena> {
                         "return takes no arguments".to_string(),
                     ));
                 }
-                Ok(Instruction::Return)
+                Ok(Instruction::Exit)
             }
 
             // Function operations

@@ -30,7 +30,7 @@ pub enum Instruction<'bytes_arena> {
     GreaterThan,
     LessThanOrEqual,
     GreaterThanOrEqual,
-    Return,
+    Exit,
     Dup,
     // Function call instructions
     Call(u16),
@@ -70,7 +70,7 @@ pub mod opcodes {
     pub const GREATER_THAN: u8 = 0x17;
     pub const LESS_THAN_OR_EQUAL: u8 = 0x18;
     pub const GREATER_THAN_OR_EQUAL: u8 = 0x19;
-    pub const RETURN: u8 = 0x1A;
+    pub const EXIT: u8 = 0x1A;
     pub const DUP: u8 = 0x1B;
     // Function call opcodes
     pub const CALL: u8 = 0x1C;
@@ -234,8 +234,8 @@ pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
             opcodes::GREATER_THAN_OR_EQUAL => {
                 instructions.push(Instruction::GreaterThanOrEqual);
             }
-            opcodes::RETURN => {
-                instructions.push(Instruction::Return);
+            opcodes::EXIT => {
+                instructions.push(Instruction::Exit);
             }
             opcodes::DUP => {
                 instructions.push(Instruction::Dup);
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn parse_return_instruction() {
-        let bytecode = vec![RETURN];
+        let bytecode = vec![EXIT];
 
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
@@ -561,7 +561,7 @@ mod tests {
         assert_eq!(result.len(), 1);
 
         match &result[0] {
-            Instruction::Return => {}
+            Instruction::Exit => {}
             _ => panic!("Expected Return instruction"),
         }
     }
