@@ -30,6 +30,7 @@ pub enum Instruction<'bytes_arena> {
     GreaterThan,
     LessThanOrEqual,
     GreaterThanOrEqual,
+    Return,
 }
 
 // Opcodes for instructions
@@ -59,6 +60,7 @@ pub mod opcodes {
     pub const GREATER_THAN: u8 = 0x17;
     pub const LESS_THAN_OR_EQUAL: u8 = 0x18;
     pub const GREATER_THAN_OR_EQUAL: u8 = 0x19;
+    pub const RETURN: u8 = 0x1A;
 }
 
 #[derive(Debug)]
@@ -211,6 +213,9 @@ pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
             }
             opcodes::GREATER_THAN_OR_EQUAL => {
                 instructions.push(Instruction::GreaterThanOrEqual);
+            }
+            opcodes::RETURN => {
+                instructions.push(Instruction::Return);
             }
             _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
         }
@@ -439,6 +444,22 @@ mod tests {
         match &result[5] {
             Instruction::GreaterThanOrEqual => {}
             _ => panic!("Expected GreaterThanOrEqual instruction"),
+        }
+    }
+
+    #[test]
+    fn parse_return_instruction() {
+        let bytecode = vec![RETURN];
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
+        assert_eq!(result.len(), 1);
+
+        match &result[0] {
+            Instruction::Return => {}
+            _ => panic!("Expected Return instruction"),
         }
     }
 }

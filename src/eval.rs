@@ -112,6 +112,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             Instruction::GreaterThan => self.op_greater_than(),
             Instruction::LessThanOrEqual => self.op_less_than_or_equal(),
             Instruction::GreaterThanOrEqual => self.op_greater_than_or_equal(),
+            Instruction::Return => self.op_return(),
         }
     }
 
@@ -419,6 +420,11 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
         } else {
             panic!("Invalid stack state for greater-than-or-equal comparison");
         }
+    }
+
+    pub fn op_return(&mut self) {
+        // Set program counter to end of program to terminate execution
+        self.program_counter = self.program.len();
     }
 }
 
@@ -1010,6 +1016,22 @@ mod tests {
         ];
 
         let expected_stack = [StackValue::U64(0)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn return_early_termination() {
+        // Test that Return terminates program execution early
+        let program = [
+            Instruction::PushInt(42),  // This should be executed
+            Instruction::Return,       // This should terminate the program
+            Instruction::PushInt(99),  // This should NOT be executed
+        ];
+
+        let expected_stack = [StackValue::U64(42)];
 
         run_test(&program, &expected_stack, |_eval| {
             // No additional assertions needed
