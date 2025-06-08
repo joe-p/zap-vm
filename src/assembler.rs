@@ -422,15 +422,6 @@ impl<'bytes_arena> Assembler<'bytes_arena> {
                 Ok(Instruction::Call(target))
             }
 
-            "call_func" => {
-                if !args.is_empty() {
-                    return Err(AssemblerError::TooManyArguments(
-                        "call_func takes no arguments".to_string(),
-                    ));
-                }
-                Ok(Instruction::CallFunction)
-            }
-
             "return_func" => {
                 if !args.is_empty() {
                     return Err(AssemblerError::TooManyArguments(

@@ -34,7 +34,6 @@ pub enum Instruction<'bytes_arena> {
     Dup,
     // Function call instructions
     Call(u16),
-    CallFunction,
     ReturnFunction,
     DefineFunctionSignature(u16, u16, u16), // (arg_count, local_count, return_count)
     // Frame pointer instructions
@@ -74,7 +73,6 @@ pub mod opcodes {
     pub const DUP: u8 = 0x1B;
     // Function call opcodes
     pub const CALL: u8 = 0x1C;
-    pub const CALL_FUNCTION: u8 = 0x1D;
     pub const RETURN_FUNCTION: u8 = 0x1E;
     pub const DEFINE_FUNCTION_SIGNATURE: u8 = 0x22;
     // Frame pointer opcodes
@@ -251,9 +249,6 @@ pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
 
                 instructions.push(Instruction::Call(target));
                 index += 2;
-            }
-            opcodes::CALL_FUNCTION => {
-                instructions.push(Instruction::CallFunction);
             }
             opcodes::DEFINE_FUNCTION_SIGNATURE => {
                 if index + 6 > bytes.len() {
@@ -589,12 +584,11 @@ mod tests {
     fn parse_function_call_instructions() {
         let mut bytecode = Vec::new();
 
-        // CALL with target 1000
         bytecode.push(CALL);
         bytecode.extend_from_slice(&1000u16.to_be_bytes());
 
-        // CALL_FUNCTION
-        bytecode.push(CALL_FUNCTION);
+        bytecode.push(CALL);
+        bytecode.extend_from_slice(&1000u16.to_be_bytes());
 
         // DEFINE_FUNCTION_SIGNATURE with 2 args, 1 local, 1 return
         bytecode.push(DEFINE_FUNCTION_SIGNATURE);
@@ -617,8 +611,8 @@ mod tests {
         }
 
         match &result[1] {
-            Instruction::CallFunction => {}
-            _ => panic!("Expected CallFunction instruction"),
+            Instruction::Call(target) => assert_eq!(*target, 1000),
+            _ => panic!("Expected Call instruction"),
         }
 
         match &result[2] {

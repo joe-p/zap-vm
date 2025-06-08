@@ -144,7 +144,6 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             Instruction::Dup => self.op_dup(),
             // Function call instructions
             Instruction::Call(target) => self.op_call(*target as usize),
-            Instruction::CallFunction => self.op_call_function(),
             Instruction::DefineFunctionSignature(arg_count, local_count, return_count) => self
                 .op_define_function_signature(
                     *arg_count as usize,
@@ -524,17 +523,6 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
 
         // Jump to the target address
         self.program_counter = target;
-    }
-
-    /// Call function where the address is on top of the stack.
-    /// Arguments are consumed when the function executes DefineArgCount.
-    /// [function_address] -> []
-    pub fn op_call_function(&mut self) {
-        if let Some(StackValue::U64(target)) = self.pop() {
-            self.op_call(target as usize);
-        } else {
-            panic!("Expected function address (U64) on the stack for call");
-        }
     }
 
     /// Define the complete function signature: arguments, local variables, and return values.
@@ -1410,30 +1398,6 @@ mod tests {
 
         run_test(&program, &expected_stack, |eval| {
             // Check that all functions have returned
-            assert_eq!(eval.call_stack.len(), 0);
-            assert_eq!(eval.frame_pointer, 0);
-        });
-    }
-
-    #[test]
-    fn call_function_instruction() {
-        // Test calling function with address on stack
-        let program = [
-            Instruction::PushInt(42),                      // 0: arg: Push argument
-            Instruction::PushInt(4),                       // 1: Push function address
-            Instruction::CallFunction,                     // 2: Call function at address on stack
-            Instruction::Exit,                             // 3: End of main
-            Instruction::DefineFunctionSignature(1, 0, 1), // 4: Function: 1 arg, 0 locals, 1 return
-            Instruction::LoadArg(0),                       // 5: Function: Load argument
-            Instruction::PushInt(8),                       // 6: Function: Push 8
-            Instruction::Mul,                              // 7: Function: Multiply
-            Instruction::ReturnFunction,                   // 8: Function: Return
-        ];
-
-        let expected_stack = [StackValue::U64(336)]; // Arguments consumed, result is 42 * 8 = 336
-
-        run_test(&program, &expected_stack, |eval| {
-            // Check that we returned to the main function
             assert_eq!(eval.call_stack.len(), 0);
             assert_eq!(eval.frame_pointer, 0);
         });
