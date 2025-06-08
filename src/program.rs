@@ -19,6 +19,8 @@ pub enum Instruction<'bytes_arena> {
     Branch(u16),
     GetElement,
     Pop,
+    BranchZero(u16),
+    BranchNonZero(u16),
 }
 
 // Opcodes for instructions
@@ -37,6 +39,8 @@ pub mod opcodes {
     pub const BRANCH: u8 = 0x0C;
     pub const GET_ELEMENT: u8 = 0x0D;
     pub const POP: u8 = 0x0E;
+    pub const BRANCH_ZERO: u8 = 0x0F;
+    pub const BRANCH_NON_ZERO: u8 = 0x10;
 }
 
 #[derive(Debug)]
@@ -139,6 +143,30 @@ pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
             opcodes::POP => {
                 instructions.push(Instruction::Pop);
             }
+            opcodes::BRANCH_ZERO => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut branch_bytes = [0u8; 2];
+                branch_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let branch = u16::from_be_bytes(branch_bytes);
+
+                instructions.push(Instruction::BranchZero(branch));
+                index += 2;
+            }
+            opcodes::BRANCH_NON_ZERO => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut branch_bytes = [0u8; 2];
+                branch_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let branch = u16::from_be_bytes(branch_bytes);
+
+                instructions.push(Instruction::BranchNonZero(branch));
+                index += 2;
+            }
             _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
         }
     }
@@ -209,6 +237,74 @@ mod tests {
     fn parse_instructions_unexpected_end() {
         // PUSH_INT without enough bytes for the value
         let bytecode = vec![PUSH_INT, 0x01, 0x02]; // Missing 6 bytes
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        match disassemble_bytecode(&bytecode, &bytes_arena, &program_arena) {
+            Err(InstructionParseError::UnexpectedEndOfBytes) => {}
+            _ => panic!("Expected UnexpectedEndOfBytes error"),
+        }
+    }
+
+    #[test]
+    fn parse_branch_zero_instruction() {
+        let mut bytecode = Vec::new();
+
+        // BRANCH_ZERO with offset 1000
+        bytecode.push(BRANCH_ZERO);
+        bytecode.extend_from_slice(&1000u16.to_be_bytes());
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
+        assert_eq!(result.len(), 1);
+
+        match &result[0] {
+            Instruction::BranchZero(offset) => assert_eq!(*offset, 1000),
+            _ => panic!("Expected BranchZero instruction"),
+        }
+    }
+
+    #[test]
+    fn parse_branch_non_zero_instruction() {
+        let mut bytecode = Vec::new();
+
+        // BRANCH_NON_ZERO with offset 2500
+        bytecode.push(BRANCH_NON_ZERO);
+        bytecode.extend_from_slice(&2500u16.to_be_bytes());
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
+        assert_eq!(result.len(), 1);
+
+        match &result[0] {
+            Instruction::BranchNonZero(offset) => assert_eq!(*offset, 2500),
+            _ => panic!("Expected BranchNonZero instruction"),
+        }
+    }
+
+    #[test]
+    fn parse_branch_zero_unexpected_end() {
+        // BRANCH_ZERO without enough bytes for the offset
+        let bytecode = vec![BRANCH_ZERO, 0x01]; // Missing 1 byte
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        match disassemble_bytecode(&bytecode, &bytes_arena, &program_arena) {
+            Err(InstructionParseError::UnexpectedEndOfBytes) => {}
+            _ => panic!("Expected UnexpectedEndOfBytes error"),
+        }
+    }
+
+    #[test]
+    fn parse_branch_non_zero_unexpected_end() {
+        // BRANCH_NON_ZERO without enough bytes for the offset
+        let bytecode = vec![BRANCH_NON_ZERO]; // Missing 2 bytes
 
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
