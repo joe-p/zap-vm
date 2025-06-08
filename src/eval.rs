@@ -106,6 +106,12 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             Instruction::Pop => self.op_pop(),
             Instruction::BranchZero(target) => self.op_branch_zero(*target as usize),
             Instruction::BranchNonZero(target) => self.op_branch_non_zero(*target as usize),
+            Instruction::Equal => self.op_equal(),
+            Instruction::NotEqual => self.op_not_equal(),
+            Instruction::LessThan => self.op_less_than(),
+            Instruction::GreaterThan => self.op_greater_than(),
+            Instruction::LessThanOrEqual => self.op_less_than_or_equal(),
+            Instruction::GreaterThanOrEqual => self.op_greater_than_or_equal(),
         }
     }
 
@@ -353,6 +359,66 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
 
     pub fn op_pop(&mut self) {
         self.stack.pop();
+    }
+
+    pub fn op_equal(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(if left == right { 1 } else { 0 }));
+        } else {
+            panic!("Invalid stack state for equality comparison");
+        }
+    }
+
+    pub fn op_not_equal(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(if left != right { 1 } else { 0 }));
+        } else {
+            panic!("Invalid stack state for not-equal comparison");
+        }
+    }
+
+    pub fn op_less_than(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(if left < right { 1 } else { 0 }));
+        } else {
+            panic!("Invalid stack state for less-than comparison");
+        }
+    }
+
+    pub fn op_greater_than(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(if left > right { 1 } else { 0 }));
+        } else {
+            panic!("Invalid stack state for greater-than comparison");
+        }
+    }
+
+    pub fn op_less_than_or_equal(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(if left <= right { 1 } else { 0 }));
+        } else {
+            panic!("Invalid stack state for less-than-or-equal comparison");
+        }
+    }
+
+    pub fn op_greater_than_or_equal(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(if left >= right { 1 } else { 0 }));
+        } else {
+            panic!("Invalid stack state for greater-than-or-equal comparison");
+        }
     }
 }
 
@@ -734,6 +800,216 @@ mod tests {
             StackValue::U64(20),
             StackValue::U64(99),
         ];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn equal_true() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(5),
+            Instruction::Equal,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn equal_false() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(3),
+            Instruction::Equal,
+        ];
+
+        let expected_stack = [StackValue::U64(0)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn not_equal_true() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(3),
+            Instruction::NotEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn not_equal_false() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(5),
+            Instruction::NotEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(0)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn less_than_true() {
+        let program = [
+            Instruction::PushInt(3),
+            Instruction::PushInt(5),
+            Instruction::LessThan,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn less_than_false() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(3),
+            Instruction::LessThan,
+        ];
+
+        let expected_stack = [StackValue::U64(0)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn greater_than_true() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(3),
+            Instruction::GreaterThan,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn greater_than_false() {
+        let program = [
+            Instruction::PushInt(3),
+            Instruction::PushInt(5),
+            Instruction::GreaterThan,
+        ];
+
+        let expected_stack = [StackValue::U64(0)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn less_than_or_equal_true_less() {
+        let program = [
+            Instruction::PushInt(3),
+            Instruction::PushInt(5),
+            Instruction::LessThanOrEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn less_than_or_equal_true_equal() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(5),
+            Instruction::LessThanOrEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn less_than_or_equal_false() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(3),
+            Instruction::LessThanOrEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(0)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn greater_than_or_equal_true_greater() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(3),
+            Instruction::GreaterThanOrEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn greater_than_or_equal_true_equal() {
+        let program = [
+            Instruction::PushInt(5),
+            Instruction::PushInt(5),
+            Instruction::GreaterThanOrEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(1)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn greater_than_or_equal_false() {
+        let program = [
+            Instruction::PushInt(3),
+            Instruction::PushInt(5),
+            Instruction::GreaterThanOrEqual,
+        ];
+
+        let expected_stack = [StackValue::U64(0)];
 
         run_test(&program, &expected_stack, |_eval| {
             // No additional assertions needed

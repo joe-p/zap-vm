@@ -24,6 +24,12 @@ pub enum Instruction<'bytes_arena> {
     Pop,
     BranchZero(u16),
     BranchNonZero(u16),
+    Equal,
+    NotEqual,
+    LessThan,
+    GreaterThan,
+    LessThanOrEqual,
+    GreaterThanOrEqual,
 }
 
 // Opcodes for instructions
@@ -47,6 +53,12 @@ pub mod opcodes {
     pub const POP: u8 = 0x11;
     pub const BRANCH_ZERO: u8 = 0x12;
     pub const BRANCH_NON_ZERO: u8 = 0x13;
+    pub const EQUAL: u8 = 0x14;
+    pub const NOT_EQUAL: u8 = 0x15;
+    pub const LESS_THAN: u8 = 0x16;
+    pub const GREATER_THAN: u8 = 0x17;
+    pub const LESS_THAN_OR_EQUAL: u8 = 0x18;
+    pub const GREATER_THAN_OR_EQUAL: u8 = 0x19;
 }
 
 #[derive(Debug)]
@@ -182,6 +194,24 @@ pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
                 instructions.push(Instruction::BranchNonZero(branch));
                 index += 2;
             }
+            opcodes::EQUAL => {
+                instructions.push(Instruction::Equal);
+            }
+            opcodes::NOT_EQUAL => {
+                instructions.push(Instruction::NotEqual);
+            }
+            opcodes::LESS_THAN => {
+                instructions.push(Instruction::LessThan);
+            }
+            opcodes::GREATER_THAN => {
+                instructions.push(Instruction::GreaterThan);
+            }
+            opcodes::LESS_THAN_OR_EQUAL => {
+                instructions.push(Instruction::LessThanOrEqual);
+            }
+            opcodes::GREATER_THAN_OR_EQUAL => {
+                instructions.push(Instruction::GreaterThanOrEqual);
+            }
             _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
         }
     }
@@ -241,7 +271,7 @@ mod tests {
 
         // SUB
         bytecode.push(SUB);
-        // MUL  
+        // MUL
         bytecode.push(MUL);
         // DIV
         bytecode.push(DIV);
@@ -360,6 +390,55 @@ mod tests {
         match disassemble_bytecode(&bytecode, &bytes_arena, &program_arena) {
             Err(InstructionParseError::UnexpectedEndOfBytes) => {}
             _ => panic!("Expected UnexpectedEndOfBytes error"),
+        }
+    }
+
+    #[test]
+    fn parse_comparison_instructions() {
+        let mut bytecode = Vec::new();
+
+        // Add all comparison instructions
+        bytecode.push(EQUAL);
+        bytecode.push(NOT_EQUAL);
+        bytecode.push(LESS_THAN);
+        bytecode.push(GREATER_THAN);
+        bytecode.push(LESS_THAN_OR_EQUAL);
+        bytecode.push(GREATER_THAN_OR_EQUAL);
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
+        assert_eq!(result.len(), 6);
+
+        match &result[0] {
+            Instruction::Equal => {}
+            _ => panic!("Expected Equal instruction"),
+        }
+
+        match &result[1] {
+            Instruction::NotEqual => {}
+            _ => panic!("Expected NotEqual instruction"),
+        }
+
+        match &result[2] {
+            Instruction::LessThan => {}
+            _ => panic!("Expected LessThan instruction"),
+        }
+
+        match &result[3] {
+            Instruction::GreaterThan => {}
+            _ => panic!("Expected GreaterThan instruction"),
+        }
+
+        match &result[4] {
+            Instruction::LessThanOrEqual => {}
+            _ => panic!("Expected LessThanOrEqual instruction"),
+        }
+
+        match &result[5] {
+            Instruction::GreaterThanOrEqual => {}
+            _ => panic!("Expected GreaterThanOrEqual instruction"),
         }
     }
 }
