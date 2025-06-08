@@ -11,6 +11,23 @@ use crate::{Instruction, ZAP_STACK_CAPACITY, trim_leading_zeros};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VecHandle(u32);
 
+/// Represents a call frame on the call stack
+#[derive(Clone, Debug, PartialEq)]
+pub struct CallFrame {
+    /// The return address (program counter to return to)
+    pub return_address: usize,
+    /// The previous frame pointer
+    pub previous_frame_pointer: usize,
+    /// The stack pointer when this frame was created
+    pub stack_pointer: usize,
+    /// Index on the stack where function arguments start
+    pub arguments_start_index: usize,
+    /// Number of arguments for this function
+    pub argument_count: usize,
+    /// Expected number of return values from this function
+    pub expected_return_count: usize,
+}
+
 /// Represents a value that can be stored on the stack in the ZAP VM.
 /// The size of this enum is 24 bytes
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -41,6 +58,12 @@ pub struct ZapEval<'eval_arena, 'program_arena: 'eval_arena> {
     program: &'program_arena [Instruction<'program_arena>],
     /// The current position in the program being executed. May go backwards with branching instructions.
     program_counter: usize,
+    /// Frame pointer pointing to the base of the current stack frame.
+    /// This allows access to local variables and parameters via offsets.
+    frame_pointer: usize,
+    /// Call stack for managing function calls and returns.
+    /// Stores return addresses and previous frame pointers.
+    call_stack: &'eval_arena mut ArenaVec<'eval_arena, CallFrame>,
 }
 
 impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_arena> {
@@ -64,6 +87,9 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
         let vecs_vec = ArenaVec::with_capacity_in(256, arena);
         let vecs = arena.alloc(vecs_vec);
 
+        let call_stack_vec = ArenaVec::with_capacity_in(256, arena);
+        let call_stack = arena.alloc(call_stack_vec);
+
         ZapEval {
             stack,
             arena,
@@ -71,6 +97,8 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             scratch_slots: scratch_slots,
             program,
             program_counter: 0,
+            frame_pointer: 0,
+            call_stack,
         }
     }
 
@@ -114,6 +142,20 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             Instruction::GreaterThanOrEqual => self.op_greater_than_or_equal(),
             Instruction::Return => self.op_return(),
             Instruction::Dup => self.op_dup(),
+            // Function call instructions
+            Instruction::Call(target) => self.op_call(*target as usize),
+            Instruction::CallFunction => self.op_call_function(),
+            Instruction::DefineFunctionSignature(arg_count, local_count, return_count) => self
+                .op_define_function_signature(
+                    *arg_count as usize,
+                    *local_count as usize,
+                    *return_count as usize,
+                ),
+            Instruction::ReturnFunction => self.op_return_function(),
+            // Frame pointer instructions
+            Instruction::LoadLocal(offset) => self.op_load_local(*offset as usize),
+            Instruction::StoreLocal(offset) => self.op_store_local(*offset as usize),
+            Instruction::LoadArg(offset) => self.op_load_arg(*offset as usize),
         }
     }
 
@@ -124,7 +166,25 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
         self.stack.push(value);
     }
 
+    /// Pop a value from the stack with boundary checking.
+    ///
+    /// When inside a function call, this method enforces that the function cannot
+    /// pop values below its stack boundary, preventing it from accessing or corrupting
+    /// the calling function's stack data.
     pub fn pop(&mut self) -> Option<StackValue<'eval_arena>> {
+        // Check if we're inside a function call and enforce stack boundaries
+        if let Some(current_frame) = self.call_stack.last() {
+            // Don't allow popping below the current function's stack boundary
+            if self.stack.len() <= current_frame.stack_pointer {
+                panic!(
+                    "Stack underflow: function attempted to pop below its stack boundary. \
+                     Stack size: {}, boundary: {}",
+                    self.stack.len(),
+                    current_frame.stack_pointer
+                );
+            }
+        }
+
         self.stack.pop()
     }
 
@@ -360,7 +420,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
     }
 
     pub fn op_pop(&mut self) {
-        self.stack.pop();
+        self.pop();
     }
 
     pub fn op_equal(&mut self) {
@@ -434,6 +494,163 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             self.push(value);
         } else {
             panic!("Expected a value to duplicate on the stack");
+        }
+    }
+
+    // Function call and frame pointer operations
+
+    /// Call function at the specified address.
+    /// Arguments are consumed when the function executes DefineArgCount.
+    pub fn op_call(&mut self, target: usize) {
+        if target >= self.program.len() {
+            panic!("Call target out of bounds: {}", target);
+        }
+
+        // Create a new call frame without arguments (they'll be consumed by DefineFunctionSignature)
+        let frame = CallFrame {
+            return_address: self.program_counter,
+            previous_frame_pointer: self.frame_pointer,
+            stack_pointer: self.stack.len(), // This will be updated by DefineFunctionSignature after consuming args
+            arguments_start_index: 0,        // Will be set by DefineFunctionSignature
+            argument_count: 0,               // Will be set by DefineFunctionSignature
+            expected_return_count: 0,        // Will be set by DefineFunctionSignature
+        };
+
+        // Push the call frame onto the call stack
+        self.call_stack.push(frame);
+
+        // Set up new frame pointer (current stack position)
+        self.frame_pointer = self.stack.len();
+
+        // Jump to the target address
+        self.program_counter = target;
+    }
+
+    /// Call function where the address is on top of the stack.
+    /// Arguments are consumed when the function executes DefineArgCount.
+    /// [function_address] -> []
+    pub fn op_call_function(&mut self) {
+        if let Some(StackValue::U64(target)) = self.pop() {
+            self.op_call(target as usize);
+        } else {
+            panic!("Expected function address (U64) on the stack for call");
+        }
+    }
+
+    /// Define the complete function signature: arguments, local variables, and return values.
+    /// This records argument positions on the stack, allocates local variable space, and sets up return value expectations.
+    pub fn op_define_function_signature(
+        &mut self,
+        arg_count: usize,
+        local_count: usize,
+        return_count: usize,
+    ) {
+        if self.call_stack.is_empty() {
+            panic!("Cannot define function signature: not inside a function call");
+        }
+
+        // Check that we have enough arguments on the stack
+        if self.stack.len() < arg_count {
+            panic!("Not enough arguments on stack for function call");
+        }
+
+        // Calculate where arguments start on the stack (they're at the top, so subtract arg_count)
+        let arguments_start_index = self.stack.len() - arg_count;
+
+        // Update the current call frame with argument information and expected return count
+        let current_frame_index = self.call_stack.len() - 1;
+        self.call_stack[current_frame_index].arguments_start_index = arguments_start_index;
+        self.call_stack[current_frame_index].argument_count = arg_count;
+        self.call_stack[current_frame_index].expected_return_count = return_count;
+        // Stack boundary is set to prevent popping below the arguments
+        self.call_stack[current_frame_index].stack_pointer = arguments_start_index;
+
+        // Pre-allocate space for local variables on the stack (initialize to Void)
+        for _ in 0..local_count {
+            self.push(StackValue::Void);
+        }
+    }
+
+    /// Return from the current function, restoring the previous frame.
+    pub fn op_return_function(&mut self) {
+        if let Some(frame) = self.call_stack.pop() {
+            // Extract return values from the stack (should be on top)
+            let mut return_values =
+                ArenaVec::with_capacity_in(frame.expected_return_count, self.arena);
+            for _ in 0..frame.expected_return_count {
+                if let Some(value) = self.pop() {
+                    return_values.push(value);
+                } else {
+                    panic!("Not enough return values on stack");
+                }
+            }
+            // Return values are in reverse order, so reverse them
+            return_values.reverse();
+
+            // Restore the stack to the state before the function call
+            self.stack.truncate(frame.stack_pointer);
+
+            // Push the return values back onto the stack
+            for value in return_values {
+                self.push(value);
+            }
+
+            // Restore the program counter to the return address
+            self.program_counter = frame.return_address;
+
+            // Restore the previous frame pointer
+            self.frame_pointer = frame.previous_frame_pointer;
+        } else {
+            panic!("Cannot return from function: call stack is empty");
+        }
+    }
+
+    /// Load a local variable onto the stack.
+    /// Local variables are stored at frame_pointer + offset.
+    pub fn op_load_local(&mut self, offset: usize) {
+        let index = self.frame_pointer + offset;
+        if index >= self.stack.len() {
+            panic!(
+                "Local variable access out of bounds: frame_pointer={}, offset={}, stack_len={}",
+                self.frame_pointer,
+                offset,
+                self.stack.len()
+            );
+        }
+        let value = self.stack[index].clone();
+        self.push(value);
+    }
+
+    /// Store a value from the stack into a local variable.
+    /// [value] -> []
+    pub fn op_store_local(&mut self, offset: usize) {
+        let value = self
+            .pop()
+            .expect("Expected a value to store in local variable");
+        let index = self.frame_pointer + offset;
+
+        // Extend the stack if necessary to accommodate the local variable
+        while self.stack.len() <= index {
+            self.stack.push(StackValue::Void);
+        }
+
+        self.stack[index] = value;
+    }
+
+    /// Load a function argument onto the stack.
+    /// Arguments are stored in the current call frame.
+    pub fn op_load_arg(&mut self, offset: usize) {
+        if let Some(frame) = self.call_stack.last() {
+            if offset >= frame.argument_count {
+                panic!(
+                    "Argument access out of bounds: offset={}, arg_count={}",
+                    offset, frame.argument_count
+                );
+            }
+            let value = self.stack[frame.arguments_start_index + offset].clone();
+            self.push(value);
+        } else {
+            panic!("Cannot load argument: no function call frame available");
         }
     }
 }
@@ -1098,5 +1315,185 @@ mod tests {
         run_test(&program, &expected_stack, |_eval| {
             // No additional assertions needed
         });
+    }
+
+    #[test]
+    fn function_call_and_return() {
+        // Test basic function call and return
+        let program = [
+            Instruction::PushInt(42), // 0: arg1: Push 42 as argument
+            Instruction::PushInt(10), // 1: arg2: Push 10 as argument
+            Instruction::Call(4),     // 2: Call function at address 4
+            Instruction::Return,      // 3: This should not be reached due to early return
+            Instruction::DefineFunctionSignature(2, 0, 1), // 4: Function: 2 args, 0 locals, 1 return
+            Instruction::LoadArg(0),                       // 5: Load first argument
+            Instruction::LoadArg(1),                       // 6: Load second argument
+            Instruction::Add,                              // 7: Add arguments
+            Instruction::ReturnFunction,                   // 8: Return from function
+        ];
+
+        let expected_stack = [StackValue::U64(52)]; // 42 + 10 = 52
+
+        run_test(&program, &expected_stack, |eval| {
+            // Check that we returned to the main function
+            assert_eq!(eval.call_stack.len(), 0);
+            assert_eq!(eval.frame_pointer, 0);
+        });
+    }
+
+    #[test]
+    fn local_variables() {
+        // Test storing and loading local variables
+        let program = [
+            Instruction::PushInt(100),  // Push value to store
+            Instruction::StoreLocal(0), // Store in local variable 0
+            Instruction::PushInt(200),  // Push another value
+            Instruction::StoreLocal(1), // Store in local variable 1
+            Instruction::LoadLocal(0),  // Load local variable 0
+            Instruction::LoadLocal(1),  // Load local variable 1
+            Instruction::Add,           // Add them
+        ];
+
+        let expected_stack = [
+            StackValue::U64(100),
+            StackValue::U64(200),
+            StackValue::U64(300),
+        ]; // Local vars remain, result is 100 + 200 = 300
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn function_with_arguments() {
+        // Test function that uses arguments
+        let program = [
+            Instruction::PushInt(15),                      // arg1: Push 15 as argument
+            Instruction::PushInt(25),                      // arg2: Push 25 as argument
+            Instruction::Call(4),                          // Call function at address 4
+            Instruction::Return,                           // This should not be reached
+            Instruction::DefineFunctionSignature(2, 0, 1), // Function: 2 args, 0 locals, 1 return
+            Instruction::LoadArg(0),                       // Load arg0 (15)
+            Instruction::LoadArg(1),                       // Load arg1 (25)
+            Instruction::Mul,                              // Multiply arguments
+            Instruction::ReturnFunction,                   // Return from function
+        ];
+
+        let expected_stack = [StackValue::U64(375)]; // 15 * 25 = 375
+
+        run_test(&program, &expected_stack, |eval| {
+            // Check that we returned to the main function
+            assert_eq!(eval.call_stack.len(), 0);
+            assert_eq!(eval.frame_pointer, 0);
+        });
+    }
+
+    #[test]
+    fn nested_function_calls() {
+        // Test nested function calls
+        let program = [
+            Instruction::PushInt(5),                       // 0: arg: Push 5 as argument
+            Instruction::Call(3),                          // 1: Call function A at address 3
+            Instruction::Return,                           // 2: End of main
+            Instruction::DefineFunctionSignature(1, 0, 1), // 3: Function A: 1 arg, 0 locals, 1 return
+            Instruction::Call(8), // 4: Function A: Call function B at address 8
+            Instruction::LoadArg(0), // 5: Function A: Load argument and push to stack
+            Instruction::Add,     // 6: Function A: Add result from B to argument
+            Instruction::ReturnFunction, // 7: Function A: Return
+            Instruction::DefineFunctionSignature(0, 0, 1), // 8: Function B: 0 args, 0 locals, 1 return
+            Instruction::PushInt(10),                      // 9: Function B: Push 10
+            Instruction::ReturnFunction,                   // 10: Function B: Return
+        ];
+
+        let expected_stack = [StackValue::U64(15)]; // Arguments consumed, result is 5 + 10 = 15
+
+        run_test(&program, &expected_stack, |eval| {
+            // Check that all functions have returned
+            assert_eq!(eval.call_stack.len(), 0);
+            assert_eq!(eval.frame_pointer, 0);
+        });
+    }
+
+    #[test]
+    fn call_function_instruction() {
+        // Test calling function with address on stack
+        let program = [
+            Instruction::PushInt(42),                      // 0: arg: Push argument
+            Instruction::PushInt(4),                       // 1: Push function address
+            Instruction::CallFunction,                     // 2: Call function at address on stack
+            Instruction::Return,                           // 3: End of main
+            Instruction::DefineFunctionSignature(1, 0, 1), // 4: Function: 1 arg, 0 locals, 1 return
+            Instruction::LoadArg(0),                       // 5: Function: Load argument
+            Instruction::PushInt(8),                       // 6: Function: Push 8
+            Instruction::Mul,                              // 7: Function: Multiply
+            Instruction::ReturnFunction,                   // 8: Function: Return
+        ];
+
+        let expected_stack = [StackValue::U64(336)]; // Arguments consumed, result is 42 * 8 = 336
+
+        run_test(&program, &expected_stack, |eval| {
+            // Check that we returned to the main function
+            assert_eq!(eval.call_stack.len(), 0);
+            assert_eq!(eval.frame_pointer, 0);
+        });
+    }
+
+    #[test]
+    fn function_with_local_variables() {
+        // Test function that uses both arguments and local variables
+        let program = [
+            Instruction::PushInt(5),                       // 0: arg: Push 5 as argument
+            Instruction::Call(3),                          // 1: Call function at address 3
+            Instruction::Return,                           // 2: End of main
+            Instruction::DefineFunctionSignature(1, 2, 1), // 3: Function: 1 arg, 2 locals, 1 return
+            Instruction::PushInt(10),                      // 4: Push 10
+            Instruction::StoreLocal(0),                    // 5: Store 10 in local variable 0
+            Instruction::PushInt(20),                      // 6: Push 20
+            Instruction::StoreLocal(1),                    // 7: Store 20 in local variable 1
+            Instruction::LoadArg(0),                       // 8: Load argument (5)
+            Instruction::LoadLocal(0),                     // 9: Load local variable 0 (10)
+            Instruction::LoadLocal(1),                     // 10: Load local variable 1 (20)
+            Instruction::Add,                              // 11: Add locals: 10 + 20 = 30
+            Instruction::Add,                              // 12: Add with argument: 5 + 30 = 35
+            Instruction::ReturnFunction,                   // 13: Return from function
+        ];
+
+        let expected_stack = [StackValue::U64(35)]; // 5 + 10 + 20 = 35
+
+        run_test(&program, &expected_stack, |eval| {
+            // Check that we returned to the main function
+            assert_eq!(eval.call_stack.len(), 0);
+            assert_eq!(eval.frame_pointer, 0);
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Stack underflow: function attempted to pop below its stack boundary"
+    )]
+    fn stack_boundary_enforcement() {
+        // Test that functions cannot pop below their stack boundary
+        let program = [
+            Instruction::PushInt(100), // 0: Push value for main function
+            Instruction::PushInt(200), // 1: Push another value for main function
+            Instruction::Call(4),      // 2: Call function at address 4
+            Instruction::Return,       // 3: End of main
+            Instruction::DefineFunctionSignature(0, 1, 0), // 4: Function: 0 args, 1 local, 0 returns
+            Instruction::Pop, // 5: Pop the local variable (this should work)
+            Instruction::Pop, // 6: This should panic - trying to pop caller's values
+            Instruction::ReturnFunction, // 7: This won't be reached due to panic
+        ];
+
+        let bump = Bump::with_capacity(1_000);
+        let mut eval = ZapEval::new(&bump, &program);
+
+        // Execute manually to be more precise about where the panic should happen
+        eval.execute_instruction(&program[0]); // PushInt(100)
+        eval.execute_instruction(&program[1]); // PushInt(200)
+        eval.execute_instruction(&program[2]); // Call(4)
+        eval.execute_instruction(&program[4]); // DefineFunctionSignature(0, 1, 0)
+        eval.execute_instruction(&program[5]); // Pop - should work
+        eval.execute_instruction(&program[6]); // Pop - should panic
     }
 }

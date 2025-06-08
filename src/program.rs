@@ -32,6 +32,15 @@ pub enum Instruction<'bytes_arena> {
     GreaterThanOrEqual,
     Return,
     Dup,
+    // Function call instructions
+    Call(u16),
+    CallFunction,
+    ReturnFunction,
+    DefineFunctionSignature(u16, u16, u16), // (arg_count, local_count, return_count)
+    // Frame pointer instructions
+    LoadLocal(u16),
+    StoreLocal(u16),
+    LoadArg(u16),
 }
 
 // Opcodes for instructions
@@ -63,6 +72,15 @@ pub mod opcodes {
     pub const GREATER_THAN_OR_EQUAL: u8 = 0x19;
     pub const RETURN: u8 = 0x1A;
     pub const DUP: u8 = 0x1B;
+    // Function call opcodes
+    pub const CALL: u8 = 0x1C;
+    pub const CALL_FUNCTION: u8 = 0x1D;
+    pub const RETURN_FUNCTION: u8 = 0x1E;
+    pub const DEFINE_FUNCTION_SIGNATURE: u8 = 0x22;
+    // Frame pointer opcodes
+    pub const LOAD_LOCAL: u8 = 0x1F;
+    pub const STORE_LOCAL: u8 = 0x20;
+    pub const LOAD_ARG: u8 = 0x21;
 }
 
 #[derive(Debug)]
@@ -221,6 +239,86 @@ pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
             }
             opcodes::DUP => {
                 instructions.push(Instruction::Dup);
+            }
+            opcodes::CALL => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut target_bytes = [0u8; 2];
+                target_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let target = u16::from_be_bytes(target_bytes);
+
+                instructions.push(Instruction::Call(target));
+                index += 2;
+            }
+            opcodes::CALL_FUNCTION => {
+                instructions.push(Instruction::CallFunction);
+            }
+            opcodes::DEFINE_FUNCTION_SIGNATURE => {
+                if index + 6 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut arg_count_bytes = [0u8; 2];
+                arg_count_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let arg_count = u16::from_be_bytes(arg_count_bytes);
+                index += 2;
+
+                let mut local_count_bytes = [0u8; 2];
+                local_count_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let local_count = u16::from_be_bytes(local_count_bytes);
+                index += 2;
+
+                let mut return_count_bytes = [0u8; 2];
+                return_count_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let return_count = u16::from_be_bytes(return_count_bytes);
+
+                instructions.push(Instruction::DefineFunctionSignature(
+                    arg_count,
+                    local_count,
+                    return_count,
+                ));
+                index += 2;
+            }
+            opcodes::RETURN_FUNCTION => {
+                instructions.push(Instruction::ReturnFunction);
+            }
+            opcodes::LOAD_LOCAL => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut offset_bytes = [0u8; 2];
+                offset_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let offset = u16::from_be_bytes(offset_bytes);
+
+                instructions.push(Instruction::LoadLocal(offset));
+                index += 2;
+            }
+            opcodes::STORE_LOCAL => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut offset_bytes = [0u8; 2];
+                offset_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let offset = u16::from_be_bytes(offset_bytes);
+
+                instructions.push(Instruction::StoreLocal(offset));
+                index += 2;
+            }
+            opcodes::LOAD_ARG => {
+                if index + 2 > bytes.len() {
+                    return Err(InstructionParseError::UnexpectedEndOfBytes);
+                }
+
+                let mut offset_bytes = [0u8; 2];
+                offset_bytes.copy_from_slice(&bytes[index..index + 2]);
+                let offset = u16::from_be_bytes(offset_bytes);
+
+                instructions.push(Instruction::LoadArg(offset));
+                index += 2;
             }
             _ => return Err(InstructionParseError::InvalidOpcode(opcode)),
         }
@@ -470,7 +568,10 @@ mod tests {
 
     #[test]
     fn parse_dup_instruction() {
-        let bytecode = vec![DUP];
+        let mut bytecode = Vec::new();
+
+        // DUP
+        bytecode.push(DUP);
 
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
@@ -481,6 +582,95 @@ mod tests {
         match &result[0] {
             Instruction::Dup => {}
             _ => panic!("Expected Dup instruction"),
+        }
+    }
+
+    #[test]
+    fn parse_function_call_instructions() {
+        let mut bytecode = Vec::new();
+
+        // CALL with target 1000
+        bytecode.push(CALL);
+        bytecode.extend_from_slice(&1000u16.to_be_bytes());
+
+        // CALL_FUNCTION
+        bytecode.push(CALL_FUNCTION);
+
+        // DEFINE_FUNCTION_SIGNATURE with 2 args, 1 local, 1 return
+        bytecode.push(DEFINE_FUNCTION_SIGNATURE);
+        bytecode.extend_from_slice(&2u16.to_be_bytes()); // arg_count
+        bytecode.extend_from_slice(&1u16.to_be_bytes()); // local_count  
+        bytecode.extend_from_slice(&1u16.to_be_bytes()); // return_count
+
+        // RETURN_FUNCTION
+        bytecode.push(RETURN_FUNCTION);
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
+        assert_eq!(result.len(), 4);
+
+        match &result[0] {
+            Instruction::Call(target) => assert_eq!(*target, 1000),
+            _ => panic!("Expected Call instruction"),
+        }
+
+        match &result[1] {
+            Instruction::CallFunction => {}
+            _ => panic!("Expected CallFunction instruction"),
+        }
+
+        match &result[2] {
+            Instruction::DefineFunctionSignature(arg_count, local_count, return_count) => {
+                assert_eq!(*arg_count, 2);
+                assert_eq!(*local_count, 1);
+                assert_eq!(*return_count, 1);
+            }
+            _ => panic!("Expected DefineFunctionSignature instruction"),
+        }
+
+        match &result[3] {
+            Instruction::ReturnFunction => {}
+            _ => panic!("Expected ReturnFunction instruction"),
+        }
+    }
+
+    #[test]
+    fn parse_frame_pointer_instructions() {
+        let mut bytecode = Vec::new();
+
+        // LOAD_LOCAL with offset 5
+        bytecode.push(LOAD_LOCAL);
+        bytecode.extend_from_slice(&5u16.to_be_bytes());
+
+        // STORE_LOCAL with offset 10
+        bytecode.push(STORE_LOCAL);
+        bytecode.extend_from_slice(&10u16.to_be_bytes());
+
+        // LOAD_ARG with offset 2
+        bytecode.push(LOAD_ARG);
+        bytecode.extend_from_slice(&2u16.to_be_bytes());
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
+        assert_eq!(result.len(), 3);
+
+        match &result[0] {
+            Instruction::LoadLocal(offset) => assert_eq!(*offset, 5),
+            _ => panic!("Expected LoadLocal instruction"),
+        }
+
+        match &result[1] {
+            Instruction::StoreLocal(offset) => assert_eq!(*offset, 10),
+            _ => panic!("Expected StoreLocal instruction"),
+        }
+
+        match &result[2] {
+            Instruction::LoadArg(offset) => assert_eq!(*offset, 2),
+            _ => panic!("Expected LoadArg instruction"),
         }
     }
 }
