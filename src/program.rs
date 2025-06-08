@@ -9,6 +9,9 @@ pub enum Instruction<'bytes_arena> {
     PushBytes(&'bytes_arena [u8]),
     BytesLen,
     Add,
+    Sub,
+    Mul,
+    Div,
     InitVecWithInitialCapacity,
     PushVec,
     ScratchStore,
@@ -29,18 +32,21 @@ pub mod opcodes {
     pub const PUSH_BYTES: u8 = 0x02;
     pub const BYTES_LEN: u8 = 0x03;
     pub const ADD: u8 = 0x04;
-    pub const INIT_VEC_WITH_INITIAL_CAPACITY: u8 = 0x05;
-    pub const PUSH_VEC: u8 = 0x06;
-    pub const SCRATCH_STORE: u8 = 0x07;
-    pub const SCRATCH_LOAD: u8 = 0x08;
-    pub const BYTE_ADD: u8 = 0x09;
-    pub const BYTE_SQRT: u8 = 0x0A;
-    pub const ED25519_VERIFY: u8 = 0x0B;
-    pub const BRANCH: u8 = 0x0C;
-    pub const GET_ELEMENT: u8 = 0x0D;
-    pub const POP: u8 = 0x0E;
-    pub const BRANCH_ZERO: u8 = 0x0F;
-    pub const BRANCH_NON_ZERO: u8 = 0x10;
+    pub const SUB: u8 = 0x05;
+    pub const MUL: u8 = 0x06;
+    pub const DIV: u8 = 0x07;
+    pub const INIT_VEC_WITH_INITIAL_CAPACITY: u8 = 0x08;
+    pub const PUSH_VEC: u8 = 0x09;
+    pub const SCRATCH_STORE: u8 = 0x0A;
+    pub const SCRATCH_LOAD: u8 = 0x0B;
+    pub const BYTE_ADD: u8 = 0x0C;
+    pub const BYTE_SQRT: u8 = 0x0D;
+    pub const ED25519_VERIFY: u8 = 0x0E;
+    pub const BRANCH: u8 = 0x0F;
+    pub const GET_ELEMENT: u8 = 0x10;
+    pub const POP: u8 = 0x11;
+    pub const BRANCH_ZERO: u8 = 0x12;
+    pub const BRANCH_NON_ZERO: u8 = 0x13;
 }
 
 #[derive(Debug)]
@@ -103,6 +109,15 @@ pub fn disassemble_bytecode<'program_arena, 'bytes_arena: 'program_arena>(
             }
             opcodes::ADD => {
                 instructions.push(Instruction::Add);
+            }
+            opcodes::SUB => {
+                instructions.push(Instruction::Sub);
+            }
+            opcodes::MUL => {
+                instructions.push(Instruction::Mul);
+            }
+            opcodes::DIV => {
+                instructions.push(Instruction::Div);
             }
             opcodes::INIT_VEC_WITH_INITIAL_CAPACITY => {
                 instructions.push(Instruction::InitVecWithInitialCapacity);
@@ -217,6 +232,39 @@ mod tests {
         match &result[2] {
             Instruction::Add => {}
             _ => panic!("Expected Add instruction"),
+        }
+    }
+
+    #[test]
+    fn parse_arithmetic_instructions() {
+        let mut bytecode = Vec::new();
+
+        // SUB
+        bytecode.push(SUB);
+        // MUL  
+        bytecode.push(MUL);
+        // DIV
+        bytecode.push(DIV);
+
+        let bytes_arena = Bump::new();
+        let program_arena = Bump::new();
+
+        let result = disassemble_bytecode(&bytecode, &bytes_arena, &program_arena).unwrap();
+        assert_eq!(result.len(), 3);
+
+        match &result[0] {
+            Instruction::Sub => {}
+            _ => panic!("Expected Sub instruction"),
+        }
+
+        match &result[1] {
+            Instruction::Mul => {}
+            _ => panic!("Expected Mul instruction"),
+        }
+
+        match &result[2] {
+            Instruction::Div => {}
+            _ => panic!("Expected Div instruction"),
         }
     }
 

@@ -91,6 +91,9 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             Instruction::PushBytes(bytes) => self.op_push_bytes(bytes),
             Instruction::BytesLen => self.op_bytes_len(),
             Instruction::Add => self.op_add(),
+            Instruction::Sub => self.op_sub(),
+            Instruction::Mul => self.op_mul(),
+            Instruction::Div => self.op_div(),
             Instruction::InitVecWithInitialCapacity => self.op_init_vec_with_initial_capacity(),
             Instruction::PushVec => self.op_push_vec(),
             Instruction::ScratchStore => self.op_scratch_store(),
@@ -167,6 +170,36 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             self.push(StackValue::U64(left.checked_add(right).unwrap()));
         } else {
             panic!("Invalid stack state for addition");
+        }
+    }
+
+    pub fn op_sub(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(left.checked_sub(right).unwrap()));
+        } else {
+            panic!("Invalid stack state for subtraction");
+        }
+    }
+
+    pub fn op_mul(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(left.checked_mul(right).unwrap()));
+        } else {
+            panic!("Invalid stack state for multiplication");
+        }
+    }
+
+    pub fn op_div(&mut self) {
+        if let (Some(StackValue::U64(right)), Some(StackValue::U64(left))) =
+            (self.pop(), self.pop())
+        {
+            self.push(StackValue::U64(left.checked_div(right).unwrap()));
+        } else {
+            panic!("Invalid stack state for division");
         }
     }
 
@@ -407,6 +440,51 @@ mod tests {
         ];
 
         let expected_stack = [StackValue::U64(8)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn sub() {
+        let program = [
+            Instruction::PushInt(10),
+            Instruction::PushInt(3),
+            Instruction::Sub,
+        ];
+
+        let expected_stack = [StackValue::U64(7)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn mul() {
+        let program = [
+            Instruction::PushInt(4),
+            Instruction::PushInt(5),
+            Instruction::Mul,
+        ];
+
+        let expected_stack = [StackValue::U64(20)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn div() {
+        let program = [
+            Instruction::PushInt(15),
+            Instruction::PushInt(3),
+            Instruction::Div,
+        ];
+
+        let expected_stack = [StackValue::U64(5)];
 
         run_test(&program, &expected_stack, |_eval| {
             // No additional assertions needed
