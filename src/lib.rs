@@ -27,3 +27,6 @@ use stats_alloc::{INSTRUMENTED_SYSTEM, StatsAlloc};
 #[global_allocator]
 #[cfg(test)]
 static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
+
+#[cfg(test)]
+mod program_tests;

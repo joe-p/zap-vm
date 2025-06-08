@@ -4,17 +4,21 @@ use rand::Rng;
 extern crate alloc;
 
 use bumpalo::Bump;
-use zap_vm::ZapEval;
+use bumpalo::collections::Vec as ArenaVec;
+use zap_vm::{Assembler, Instruction, ZapEval};
 
 // Helper function to reduce code duplication across benchmarks
-fn run_benchmark<S, M>(c: &mut Criterion, name: &str, setup: S, measure: M)
+fn run_benchmark<S, M>(c: &mut Criterion, name: &str, source: &str, setup: S, measure: M)
 where
     S: Fn(&mut ZapEval) + Copy,
     M: Fn(&mut ZapEval) + Copy,
 {
     let mut bump = Bump::with_capacity(16_000);
     let bump_ptr = &mut bump as *mut Bump;
-    let instructions = vec![];
+
+    let bytes_arena = Bump::new();
+    let program_arena = Bump::new();
+    let instructions = assemble_program(&source, &bytes_arena, &program_arena);
 
     c.bench_function(name, |b| {
         b.iter_batched(
@@ -36,6 +40,7 @@ fn benchmark_op_add(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_add",
+        "",
         |eval| {
             // Push two integers onto the stack
             eval.op_push_int(black_box(5));
@@ -51,6 +56,7 @@ fn benchmark_op_init_vec(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_init_vec_capacity_10",
+        "",
         |eval| {
             eval.op_push_int(black_box(10));
         },
@@ -64,6 +70,7 @@ fn benchmark_op_push_vec(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_push_vec_single_item",
+        "",
         |eval| {
             // Create a vector first
             eval.op_push_int(black_box(10));
@@ -82,6 +89,7 @@ fn benchmark_multiple_push_ops(c: &mut Criterion) {
     run_benchmark(
         c,
         "push_10_items_to_vec",
+        "",
         |eval| {
             // Create a vector
             eval.op_push_int(black_box(10));
@@ -101,6 +109,7 @@ fn benchmark_multiple_push_over_capacity(c: &mut Criterion) {
     run_benchmark(
         c,
         "push_10_items_over_capacity",
+        "",
         |eval| {
             // Create a vector
             eval.op_push_int(black_box(1));
@@ -120,6 +129,7 @@ fn benchmark_alternating_vecs_over_capacity(c: &mut Criterion) {
     run_benchmark(
         c,
         "alternating_vecs_over_capacity",
+        "",
         |eval| {
             // Create a vector with initial capacity
             eval.op_push_int(1);
@@ -162,6 +172,7 @@ fn benchmark_op_byte_add_u512(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_byte_add_u512",
+        "",
         |eval| {
             // Push two bytes onto the stack
             eval.op_push_bytes(black_box(u512_bytes_ref));
@@ -186,6 +197,7 @@ fn benchmark_op_byte_add_u256(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_byte_add_u256",
+        "",
         |eval| {
             // Push two bytes onto the stack
             eval.op_push_bytes(black_box(u256_bytes_ref));
@@ -210,6 +222,7 @@ fn benchmark_op_byte_sqrt_u512(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_byte_byte_sqrt_u512",
+        "",
         |eval| {
             // Push two bytes onto the stack
             eval.op_push_bytes(black_box(u512_bytes_ref));
@@ -245,6 +258,7 @@ fn benchmark_op_ed25516_verify(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_ed25519_verify",
+        "",
         |eval| {
             eval.op_push_bytes(black_box(message_bytes_ref));
             eval.op_push_bytes(black_box(public_key_bytes_ref));
@@ -260,12 +274,84 @@ fn benchmark_op_pop(c: &mut Criterion) {
     run_benchmark(
         c,
         "op_pop",
+        "",
         |eval| {
             // Push an integer onto the stack
             eval.op_push_int(black_box(42));
         },
         |eval| {
             eval.op_pop();
+        },
+    );
+}
+
+fn assemble_program<'bytes_arena, 'program_arena: 'bytes_arena>(
+    source: &str,
+    bytes_arena: &'bytes_arena Bump,
+    program_arena: &'program_arena Bump,
+) -> ArenaVec<'program_arena, Instruction<'bytes_arena>> {
+    // Assemble the source code
+    let mut assembler = Assembler::new(&bytes_arena);
+    let instructions = assembler
+        .assemble(source, &program_arena)
+        .expect("Failed to assemble program");
+
+    return instructions;
+}
+
+// For context, the same program benchmarked in go-algorand against the AVM is ~18us on an Apple M4
+// Pro. To be clear, the AVM does much more computation during eval due to the EvalParams, opcode
+// budget, etc. That being said, we want to make sure we are at least as fast as the AVM and as of
+// this writing, the Zap VM is about 3x faster.
+//
+// See https://gist.github.com/joe-p/639b5d4a61d78d0c6a0027ae8278953f
+fn benchmark_fibonacci(c: &mut Criterion) {
+    let n = 10;
+    let source = format!(
+        r#"
+        int {n}
+        call fib_function
+        return
+
+    fib_function:
+        func_def 1 0 1  // 1 arg, 0 locals, 1 return
+        
+        // Check if n <= 1 (base cases)
+        arg_load 0      // load n
+        int 1
+        <=              // n <= 1?
+        bz recursive_case
+
+        // Base case: return n (0 or 1)
+        arg_load 0
+        return_func
+
+    recursive_case:
+        // Compute fib(n-1)
+        arg_load 0      // load n
+        int 1
+        -               // n - 1
+        call fib_function // call fib(n-1)
+        
+        // Compute fib(n-2) 
+        arg_load 0      // load n
+        int 2
+        -               // n - 2
+        call fib_function // call fib(n-2)
+        
+        // Add fib(n-1) + fib(n-2)
+        +               // fib(n-1) + fib(n-2)
+        return_func
+    "#
+    );
+
+    run_benchmark(
+        c,
+        "fibonacci",
+        &source,
+        |_| {},
+        |eval| {
+            eval.run();
         },
     );
 }
@@ -282,6 +368,7 @@ criterion_group!(
     benchmark_op_init_vec,
     benchmark_op_push_vec,
     benchmark_multiple_push_ops,
-    benchmark_multiple_push_over_capacity
+    benchmark_multiple_push_over_capacity,
+    benchmark_fibonacci,
 );
 criterion_main!(benches);
