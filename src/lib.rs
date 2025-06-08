@@ -2,10 +2,12 @@
 
 extern crate alloc;
 
+pub mod assembler;
 pub mod eval;
 pub mod program;
 pub mod sequence;
 
+pub use assembler::{Assembler, AssemblerError};
 pub use eval::{StackValue, ZapEval};
 pub use program::{Instruction, InstructionParseError, opcodes};
 
