@@ -113,6 +113,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             Instruction::LessThanOrEqual => self.op_less_than_or_equal(),
             Instruction::GreaterThanOrEqual => self.op_greater_than_or_equal(),
             Instruction::Return => self.op_return(),
+            Instruction::Dup => self.op_dup(),
         }
     }
 
@@ -425,6 +426,15 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
     pub fn op_return(&mut self) {
         // Set program counter to end of program to terminate execution
         self.program_counter = self.program.len();
+    }
+
+    pub fn op_dup(&mut self) {
+        if let Some(value) = self.pop() {
+            self.push(value.clone());
+            self.push(value);
+        } else {
+            panic!("Expected a value to duplicate on the stack");
+        }
     }
 }
 
@@ -1026,12 +1036,64 @@ mod tests {
     fn return_early_termination() {
         // Test that Return terminates program execution early
         let program = [
-            Instruction::PushInt(42),  // This should be executed
-            Instruction::Return,       // This should terminate the program
-            Instruction::PushInt(99),  // This should NOT be executed
+            Instruction::PushInt(42), // This should be executed
+            Instruction::Return,      // This should terminate the program
+            Instruction::PushInt(99), // This should NOT be executed
         ];
 
         let expected_stack = [StackValue::U64(42)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn dup() {
+        // Test that Dup duplicates the top value on the stack
+        let program = [
+            Instruction::PushInt(42), // Push 42 onto the stack
+            Instruction::Dup,         // Duplicate the top value
+        ];
+
+        let expected_stack = [StackValue::U64(42), StackValue::U64(42)];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn dup_bytes() {
+        // Test that Dup works with bytes
+        let test_bytes = [1, 2, 3, 4].as_slice();
+        let program = [
+            Instruction::PushBytes(&test_bytes), // Push bytes onto the stack
+            Instruction::Dup,                    // Duplicate the top value
+        ];
+
+        let expected_stack = [
+            StackValue::Bytes(&test_bytes),
+            StackValue::Bytes(&test_bytes),
+        ];
+
+        run_test(&program, &expected_stack, |_eval| {
+            // No additional assertions needed
+        });
+    }
+
+    #[test]
+    fn dup_with_arithmetic() {
+        // Test that Dup works correctly with arithmetic operations
+        let program = [
+            Instruction::PushInt(5), // Push 5 onto the stack
+            Instruction::Dup,        // Duplicate 5, so stack is [5, 5]
+            Instruction::Add,        // Add the two 5s, so stack is [10]
+            Instruction::Dup,        // Duplicate 10, so stack is [10, 10]
+            Instruction::Mul,        // Multiply the two 10s, so stack is [100]
+        ];
+
+        let expected_stack = [StackValue::U64(100)];
 
         run_test(&program, &expected_stack, |_eval| {
             // No additional assertions needed
