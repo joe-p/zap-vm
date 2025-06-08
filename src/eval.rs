@@ -64,6 +64,9 @@ pub struct ZapEval<'eval_arena, 'program_arena: 'eval_arena> {
     /// Call stack for managing function calls and returns.
     /// Stores return addresses and previous frame pointers.
     call_stack: &'eval_arena mut ArenaVec<'eval_arena, CallFrame>,
+    /// Current stack boundary for function calls. Functions cannot pop below this boundary.
+    /// This is updated when entering/exiting function calls for performance.
+    stack_boundary: usize,
 }
 
 impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_arena> {
@@ -99,6 +102,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             program_counter: 0,
             frame_pointer: 0,
             call_stack,
+            stack_boundary: 0,
         }
     }
 
@@ -171,17 +175,14 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
     /// pop values below its stack boundary, preventing it from accessing or corrupting
     /// the calling function's stack data.
     pub fn pop(&mut self) -> Option<StackValue<'eval_arena>> {
-        // Check if we're inside a function call and enforce stack boundaries
-        if let Some(current_frame) = self.call_stack.last() {
-            // Don't allow popping below the current function's stack boundary
-            if self.stack.len() <= current_frame.stack_pointer {
-                panic!(
-                    "Stack underflow: function attempted to pop below its stack boundary. \
-                     Stack size: {}, boundary: {}",
-                    self.stack.len(),
-                    current_frame.stack_pointer
-                );
-            }
+        // Check stack boundary
+        if self.stack.len() <= self.stack_boundary {
+            panic!(
+                "Stack underflow: function attempted to pop below its stack boundary. \
+                 Stack size: {}, boundary: {}",
+                self.stack.len(),
+                self.stack_boundary
+            );
         }
 
         self.stack.pop()
@@ -553,6 +554,9 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
         // Stack boundary is set to prevent popping below the arguments
         self.call_stack[current_frame_index].stack_pointer = arguments_start_index;
 
+        // Update the stack boundary for performance (avoids call_stack.last() lookup)
+        self.stack_boundary = arguments_start_index;
+
         // Pre-allocate space for local variables on the stack (initialize to Void)
         for _ in 0..local_count {
             self.push(StackValue::Void);
@@ -588,6 +592,13 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
 
             // Restore the previous frame pointer
             self.frame_pointer = frame.previous_frame_pointer;
+
+            // Restore the stack boundary to the previous function's boundary
+            self.stack_boundary = if let Some(previous_frame) = self.call_stack.last() {
+                previous_frame.stack_pointer
+            } else {
+                0 // No more function calls, reset to global boundary
+            };
         } else {
             panic!("Cannot return from function: call stack is empty");
         }
