@@ -97,7 +97,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             stack,
             arena,
             vecs,
-            scratch_slots: scratch_slots,
+            scratch_slots,
             program,
             program_counter: 0,
             frame_pointer: 0,
@@ -209,7 +209,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
     }
 
     pub fn op_branch(&mut self, target: usize) {
-        if target as usize >= self.program.len() {
+        if target >= self.program.len() {
             panic!("Branch target out of bounds: {}", target);
         }
         self.program_counter = target
@@ -278,9 +278,7 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
             panic!("Expected a U64 value for Vec capacity");
         };
 
-        let idx = VecHandle {
-            0: self.vecs.len() as u32,
-        };
+        let idx = VecHandle(self.vecs.len() as u32);
         let vec = ArenaVec::with_capacity_in(capacity, self.arena);
         self.vecs.push(vec);
         self.push(StackValue::Vec(idx));
@@ -329,24 +327,21 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
         if let (Some(StackValue::Bytes(left)), Some(StackValue::Bytes(right))) =
             (self.pop(), self.pop())
         {
-            let left_num: crypto_bigint::U512;
-            let right_num: crypto_bigint::U512;
-
-            if left.len() < 64 {
+            let left_num = if left.len() < 64 {
                 let mut padded_left = [0u8; 64];
-                padded_left[64 - left.len()..].copy_from_slice(*left);
-                left_num = crypto_bigint::U512::from_be_slice(&padded_left);
+                padded_left[64 - left.len()..].copy_from_slice(left);
+                crypto_bigint::U512::from_be_slice(&padded_left)
             } else {
-                left_num = crypto_bigint::U512::from_be_slice(*left);
-            }
+                crypto_bigint::U512::from_be_slice(left)
+            };
 
-            if right.len() < 64 {
+            let right_num = if right.len() < 64 {
                 let mut padded_right = [0u8; 64];
-                padded_right[64 - right.len()..].copy_from_slice(*right);
-                right_num = crypto_bigint::U512::from_be_slice(&padded_right);
+                padded_right[64 - right.len()..].copy_from_slice(right);
+                crypto_bigint::U512::from_be_slice(&padded_right)
             } else {
-                right_num = crypto_bigint::U512::from_be_slice(*right);
-            }
+                crypto_bigint::U512::from_be_slice(right)
+            };
 
             let result = left_num
                 .checked_add(&right_num)
@@ -362,14 +357,13 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
 
     pub fn op_byte_sqrt(&mut self) {
         if let Some(StackValue::Bytes(bytes)) = self.pop() {
-            let num: crypto_bigint::U512;
-            if bytes.len() < 64 {
+            let num = if bytes.len() < 64 {
                 let mut padded_bytes = [0u8; 64];
-                padded_bytes[64 - bytes.len()..].copy_from_slice(*bytes);
-                num = crypto_bigint::U512::from_be_slice(&padded_bytes);
+                padded_bytes[64 - bytes.len()..].copy_from_slice(bytes);
+                crypto_bigint::U512::from_be_slice(&padded_bytes)
             } else {
-                num = crypto_bigint::U512::from_be_slice(*bytes);
-            }
+                crypto_bigint::U512::from_be_slice(bytes)
+            };
 
             let result = num.sqrt_vartime();
 
@@ -389,14 +383,13 @@ impl<'eval_arena, 'program_arena: 'eval_arena> ZapEval<'eval_arena, 'program_are
         ) = (self.pop(), self.pop(), self.pop())
         {
             let public_key = ed25519_dalek::VerifyingKey::try_from(*public_key).unwrap();
-            let signature = ed25519_dalek::Signature::try_from(*signature).expect(
-                format!(
+            let signature = ed25519_dalek::Signature::try_from(*signature).unwrap_or_else(|_| {
+                panic!(
                     "Invalid signature format: expected 64 bytes, got {} bytes",
                     signature.len()
                 )
-                .as_str(),
-            );
-            let is_valid = public_key.verify_strict(*message, &signature).is_ok();
+            });
+            let is_valid = public_key.verify_strict(message, &signature).is_ok();
             self.push(StackValue::U64(if is_valid { 1 } else { 0 }));
         } else {
             panic!("Expected Bytes for signature, message, and public key on the stack");
@@ -674,7 +667,7 @@ mod tests {
 
         let mut eval = ZapEval::new(&bump, program);
 
-        let region = Region::new(&GLOBAL);
+        let region = Region::new(GLOBAL);
         eval.run();
         let alloc_stats = region.change();
 
@@ -813,12 +806,12 @@ mod tests {
         let b1 = [2].as_slice();
         let b2 = [3].as_slice();
         let program = [
-            Instruction::PushBytes(&b1), // Push first byte
-            Instruction::PushBytes(&b2), // Push second byte
-            Instruction::ByteAdd,        // Add the bytes
+            Instruction::PushBytes(b1), // Push first byte
+            Instruction::PushBytes(b2), // Push second byte
+            Instruction::ByteAdd,       // Add the bytes
         ];
 
-        run_test(&program, &[StackValue::Bytes(&&[5].as_slice())], |eval| {
+        run_test(&program, &[StackValue::Bytes(&[5].as_slice())], |eval| {
             // Check the final state - we should have the sum of bytes on the stack
             assert_eq!(eval.stack.len(), 1);
             if let StackValue::Bytes(result) = &eval.stack[0] {
@@ -1284,8 +1277,8 @@ mod tests {
         // Test that Dup works with bytes
         let test_bytes = [1, 2, 3, 4].as_slice();
         let program = [
-            Instruction::PushBytes(&test_bytes), // Push bytes onto the stack
-            Instruction::Dup,                    // Duplicate the top value
+            Instruction::PushBytes(test_bytes), // Push bytes onto the stack
+            Instruction::Dup,                   // Duplicate the top value
         ];
 
         let expected_stack = [

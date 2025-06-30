@@ -5,7 +5,7 @@ use crate::Instruction;
 pub fn eval_sequence(programs: &[&[Instruction]], eval_arena: &mut Bump) -> Result<(), String> {
     for program in programs {
         eval_arena.reset();
-        let mut eval = crate::ZapEval::new(&eval_arena, program);
+        let mut eval = crate::ZapEval::new(eval_arena, program);
         eval.run()
     }
     Ok(())
@@ -69,7 +69,7 @@ mod tests {
             }
 
             let program = disassemble_bytecode(bytecode, &bytes_arena, &program_arena)
-                .map_err(|_| format!("Failed to parse bytecode"))
+                .map_err(|_| "Failed to parse bytecode".to_string())
                 .unwrap();
 
             let program = program_arena.alloc(program);
@@ -80,7 +80,7 @@ mod tests {
 
         let mut eval_arena = Bump::with_capacity(1_000_000);
 
-        let region = Region::new(&GLOBAL);
+        let region = Region::new(GLOBAL);
         let result = eval_sequence(&programs, &mut eval_arena);
         let alloc_stats = region.change();
 

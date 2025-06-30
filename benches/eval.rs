@@ -18,7 +18,7 @@ where
 
     let bytes_arena = Bump::new();
     let program_arena = Bump::new();
-    let instructions = assemble_program(&source, &bytes_arena, &program_arena);
+    let instructions = assemble_program(source, &bytes_arena, &program_arena);
 
     c.bench_function(name, |b| {
         b.iter_batched(
@@ -161,7 +161,7 @@ fn benchmark_alternating_vecs_over_capacity(c: &mut Criterion) {
 
 fn benchmark_op_byte_add_u512(c: &mut Criterion) {
     let hex128 = "102030405060708090a0b0c0d0e0f000";
-    let u512 = format!("{}", hex128.repeat(4));
+    let u512 = hex128.repeat(4).to_string();
     let u512_bytes = Box::leak(
         hex::decode(u512)
             .expect("Failed to decode hex string")
@@ -186,7 +186,7 @@ fn benchmark_op_byte_add_u512(c: &mut Criterion) {
 
 fn benchmark_op_byte_add_u256(c: &mut Criterion) {
     let hex128 = "102030405060708090a0b0c0d0e0f000";
-    let u256 = format!("{}", hex128.repeat(4));
+    let u256 = hex128.repeat(4).to_string();
     let u256_bytes = Box::leak(
         hex::decode(u256)
             .expect("Failed to decode hex string")
@@ -211,7 +211,7 @@ fn benchmark_op_byte_add_u256(c: &mut Criterion) {
 
 fn benchmark_op_byte_sqrt_u512(c: &mut Criterion) {
     let hex128 = "102030405060708090a0b0c0d0e0f000";
-    let u512 = format!("{}", hex128.repeat(4));
+    let u512 = hex128.repeat(4).to_string();
     let u512_bytes = Box::leak(
         hex::decode(u512)
             .expect("Failed to decode hex string")
@@ -291,12 +291,12 @@ fn assemble_program<'bytes_arena, 'program_arena: 'bytes_arena>(
     program_arena: &'program_arena Bump,
 ) -> ArenaVec<'program_arena, Instruction<'bytes_arena>> {
     // Assemble the source code
-    let mut assembler = Assembler::new(&bytes_arena);
+    let mut assembler = Assembler::new(bytes_arena);
     let instructions = assembler
-        .assemble(source, &program_arena)
+        .assemble(source, program_arena)
         .expect("Failed to assemble program");
 
-    return instructions;
+    instructions
 }
 
 // For context, the same program benchmarked in go-algorand against the AVM is ~18us on an Apple M4
