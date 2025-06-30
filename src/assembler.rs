@@ -96,12 +96,11 @@ impl<'bytes_arena> Assembler<'bytes_arena> {
             }
 
             // Check for labels (lines ending with ':')
-            if line.ends_with(':') {
-                let label = line[..line.len() - 1].trim().to_string();
+            if let Some(label) = line.strip_suffix(':') {
                 if label.is_empty() {
                     return Err(AssemblerError::InvalidArgument("Empty label".to_string()));
                 }
-                parsed_lines.push(ParsedLine::Label(label));
+                parsed_lines.push(ParsedLine::Label(label.to_string()));
                 continue;
             }
 

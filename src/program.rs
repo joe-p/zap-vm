@@ -370,14 +370,7 @@ mod tests {
 
     #[test]
     fn parse_arithmetic_instructions() {
-        let mut bytecode = Vec::new();
-
-        // SUB
-        bytecode.push(SUB);
-        // MUL
-        bytecode.push(MUL);
-        // DIV
-        bytecode.push(DIV);
+        let bytecode = vec![SUB, MUL, DIV];
 
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
@@ -498,15 +491,14 @@ mod tests {
 
     #[test]
     fn parse_comparison_instructions() {
-        let mut bytecode = Vec::new();
-
-        // Add all comparison instructions
-        bytecode.push(EQUAL);
-        bytecode.push(NOT_EQUAL);
-        bytecode.push(LESS_THAN);
-        bytecode.push(GREATER_THAN);
-        bytecode.push(LESS_THAN_OR_EQUAL);
-        bytecode.push(GREATER_THAN_OR_EQUAL);
+        let bytecode = vec![
+            EQUAL,
+            NOT_EQUAL,
+            LESS_THAN,
+            GREATER_THAN,
+            LESS_THAN_OR_EQUAL,
+            GREATER_THAN_OR_EQUAL,
+        ];
 
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();
@@ -563,10 +555,7 @@ mod tests {
 
     #[test]
     fn parse_dup_instruction() {
-        let mut bytecode = Vec::new();
-
-        // DUP
-        bytecode.push(DUP);
+        let bytecode = vec![DUP];
 
         let bytes_arena = Bump::new();
         let program_arena = Bump::new();

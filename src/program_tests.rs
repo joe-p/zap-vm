@@ -20,7 +20,7 @@ fn run_assembly_program(source: &str, expected_stack: &[StackValue]) {
 
     // Execute the program
     let mut eval = ZapEval::new(&eval_arena, &instructions);
-    let region = Region::new(&GLOBAL);
+    let region = Region::new(GLOBAL);
     eval.run();
     let alloc_stats = region.change();
 
