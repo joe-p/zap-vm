@@ -4,6 +4,7 @@ extern crate alloc;
 
 pub mod assembler;
 pub mod eval;
+pub mod jit;
 pub mod program;
 pub mod sequence;
 
@@ -30,3 +31,4 @@ static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 
 #[cfg(test)]
 mod program_tests;
+
