@@ -306,7 +306,7 @@ fn assemble_program<'bytes_arena, 'program_arena: 'bytes_arena>(
 //
 // See https://gist.github.com/joe-p/639b5d4a61d78d0c6a0027ae8278953f
 fn benchmark_fibonacci(c: &mut Criterion) {
-    let n = 10;
+    let n = 15;
     let source = format!(
         r#"
         int {n}
